@@ -1,0 +1,15 @@
+{
+  "name": "nutrivita",
+  "version": "1.0.0",
+  "description": "NutriVita - Vitamin Deficiency Detection and Nutrition Recommendation System",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "install:server": "cd server && npm install",
+    "install:client": "cd client && npm install",
+    "install:all": "npm run install:server && npm run install:client"
+  },
+  "keywords": ["nutrition", "vitamins", "health", "csp", "wellness"],
+  "author": "NutriVita Team",
+  "license": "ISC"
+}

@@ -1,0 +1,656 @@
+/**
+ * NutriVita Real Vision AI & Clinical Nutrition Assessment Service
+ * Integrates Google Gemini Vision API (and OpenAI Vision fallback) using native fetch.
+ * When no API key is provided, provides an honest, evidence-based rule assessment without faking visual AI.
+ */
+
+import { evaluateBodyChange, BODY_AREAS } from '../data/bodyChangeKnowledge.js';
+import { FoodRepository } from '../models/FoodItem.js';
+
+export class VisionAIService {
+  static _healthCache = null;
+
+  /**
+   * Health and reachability probe for Google Gemini Vision
+   */
+  static async checkVisionHealth(force = false) {
+    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    if (!geminiKey) {
+      return {
+        configured: false,
+        reachable: false,
+        provider: null,
+        status: 'unconfigured',
+        message: 'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is currently unavailable because the vision service has not been configured.'
+      };
+    }
+
+    if (!force && this._healthCache && (Date.now() - this._healthCache.timestamp < 60000)) {
+      return this._healthCache.data;
+    }
+
+    try {
+      // Probe active Gemini models in order of Google availability
+      const probeModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-pro'];
+      let reachableModel = null;
+      let lastErrMsg = '';
+
+      for (const model of probeModels) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 6000);
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${geminiKey}`, {
+            method: 'GET',
+            signal: controller.signal
+          });
+          clearTimeout(timeout);
+
+          if (res.ok) {
+            reachableModel = model;
+            break;
+          } else {
+            const errJson = await res.json().catch(() => ({}));
+            lastErrMsg = errJson?.error?.message || `HTTP ${res.status}`;
+          }
+        } catch (e) {
+          lastErrMsg = e.message;
+        }
+      }
+
+      if (reachableModel) {
+        const data = {
+          configured: true,
+          reachable: true,
+          provider: 'Google Gemini Flash Vision AI',
+          model: reachableModel,
+          status: 'active',
+          message: `Google Gemini Vision AI (${reachableModel}) is active and reachable.`
+        };
+        this._healthCache = { timestamp: Date.now(), data };
+        return data;
+      } else {
+        const data = {
+          configured: true,
+          reachable: false,
+          provider: 'Google Gemini Flash Vision AI',
+          status: 'error',
+          error: lastErrMsg,
+          message: 'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is temporarily unavailable because the vision service could not be reached.'
+        };
+        this._healthCache = { timestamp: Date.now(), data };
+        return data;
+      }
+    } catch (err) {
+      const data = {
+        configured: true,
+        reachable: false,
+        provider: 'Google Gemini Flash Vision AI',
+        status: 'error',
+        error: err.message,
+        message: 'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is temporarily unavailable because the vision service could not be reached.'
+      };
+      this._healthCache = { timestamp: Date.now(), data };
+      return data;
+    }
+  }
+
+  /**
+   * Main assessment entry point
+   */
+  static async assess({
+    imageBuffer,
+    mimeType,
+    bodyAreaId,
+    changeId,
+    duration,
+    associatedSymptoms = [],
+    language = 'en'
+  }) {
+    const isTelugu = language === 'te';
+    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    const openAIKey = process.env.OPENAI_API_KEY?.trim();
+
+    // Baseline rule-based knowledge evaluation
+    const ruleEvaluation = evaluateBodyChange({
+      bodyAreaId,
+      changeId,
+      duration,
+      associatedSymptoms,
+      language
+    });
+
+    if (!ruleEvaluation) {
+      throw new Error(`Invalid body area '${bodyAreaId}' or physical change specified.`);
+    }
+
+    // Populate recommended whole foods from NutriVita's verified food repository
+    const recommendedFoods = [];
+    if (ruleEvaluation.recommendedFoodIds && ruleEvaluation.recommendedFoodIds.length > 0) {
+      for (const foodId of ruleEvaluation.recommendedFoodIds.slice(0, 6)) {
+        try {
+          const food = await FoodRepository.findById(foodId);
+          if (food) {
+            recommendedFoods.push({
+              id: food.id,
+              name: food.name,
+              teluguName: food.teluguName,
+              category: food.category,
+              servingSize: food.servingSize,
+              imageUrl: food.imageUrl,
+              calories: food.calories,
+              macronutrients: food.macronutrients,
+              keyVitamins: food.vitamins,
+              keyMinerals: food.minerals,
+              benefits: language === 'te' ? food.benefitsTe : food.benefitsEn
+            });
+          }
+        } catch {
+          // continue
+        }
+      }
+    }
+
+    const nonDiagnosticNotice = isTelugu
+      ? 'ముఖ్యమైన వైద్య గమనిక: ఈ విశ్లేషణ విద్యా మరియు అవగాహన ప్రయోజనాల కోసం మాత్రమే. ఫోటో లేదా లక్షణాల ఆధారిత అంచనా విటమిన్ లోపం లేదా వ్యాధికి క్లినికల్ రుజువు కాదు. ఖచ్చితమైన నిర్ధారణ కోసం అర్హత కలిగిన వైద్యుడిని లేదా ప్రయోగశాల పరీక్షలను సంప్రదించండి.'
+      : 'Important Medical Notice: This assessment is strictly educational and non-diagnostic. A photograph or symptom check is NOT clinical proof of a vitamin deficiency or disease. Laboratory diagnostic tests (e.g. serum ferritin, vitamin assays) and certified physician evaluation are required for medical diagnosis.';
+
+    // Check if an image was uploaded and an active vision API key exists
+    const hasImage = Boolean(imageBuffer && imageBuffer.length > 0);
+    const hasVisionKey = Boolean(geminiKey || openAIKey);
+
+    if (hasImage && hasVisionKey) {
+      try {
+        let aiResult = null;
+        if (geminiKey) {
+          aiResult = await this.callGeminiVision({
+            geminiKey,
+            imageBuffer,
+            mimeType: mimeType || 'image/jpeg',
+            bodyAreaName: ruleEvaluation.bodyArea.name,
+            changeName: ruleEvaluation.physicalChange.name,
+            duration,
+            associatedSymptoms,
+            language
+          });
+        } else if (openAIKey) {
+          aiResult = await this.callOpenAIVision({
+            openAIKey,
+            imageBuffer,
+            mimeType: mimeType || 'image/jpeg',
+            bodyAreaName: ruleEvaluation.bodyArea.name,
+            changeName: ruleEvaluation.physicalChange.name,
+            duration,
+            associatedSymptoms,
+            language
+          });
+        }
+
+        if (aiResult) {
+          return {
+            visionAiUsed: true,
+            photoAnalyzed: true,
+            provider: geminiKey ? 'Google Gemini 1.5 Flash Vision' : 'OpenAI Vision',
+            visualObservations: aiResult.visualObservations || 'Visual indicators consistent with reported nutritional signals.',
+            bodyArea: ruleEvaluation.bodyArea,
+            physicalChange: ruleEvaluation.physicalChange,
+            duration: ruleEvaluation.duration,
+            associatedSymptoms,
+            urgencyLevel: aiResult.urgencyLevel || ruleEvaluation.urgencyLevel,
+            correlatedNutrients: aiResult.correlatedNutrients?.length > 0 
+              ? aiResult.correlatedNutrients 
+              : ruleEvaluation.correlatedNutrients,
+            recommendedFoods,
+            synergies: ruleEvaluation.synergies,
+            redFlags: aiResult.redFlags?.length > 0 ? aiResult.redFlags : ruleEvaluation.redFlags,
+            educationalDisclaimer: ruleEvaluation.educationalDisclaimer,
+            nonDiagnosticNotice,
+            notes: 'Multi-modal Vision AI analysis completed in conjunction with clinical nutrition algorithms.'
+          };
+        }
+      } catch (err) {
+        console.warn('Vision AI call encountered an issue, falling back cleanly to verified rule knowledge:', err.message);
+      }
+    }
+
+    // Transparent, honest response when no API key is configured or photo was skipped
+    const apiKeyNotice = !hasVisionKey
+      ? (isTelugu
+          ? 'ఎడ్యుకేషనల్ రూల్స్-బేస్డ్ మోడ్ యాక్టివ్‌గా ఉంది. మీ మార్గదర్శకత్వం ఎంచుకున్న శరీర భాగం మరియు లక్షణాల ఆధారంగా రూపొందించబడింది. విజన్ సర్వీస్ కాన్ఫిగర్ కానందున AI ఫోటో విశ్లేషణ ప్రస్తుతం అందుబాటులో లేదు (GEMINI_API_KEY server/.env లో లేదు).'
+          : 'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is currently unavailable because the vision service has not been configured (GEMINI_API_KEY is not set in server/.env).')
+      : (hasImage
+          ? (isTelugu
+              ? 'ఎడ్యుకేషనల్ రూల్స్-బేస్డ్ మోడ్ యాక్టివ్‌గా ఉంది. మీ మార్గదర్శకత్వం ఎంచుకున్న శరీర భాగం మరియు లక్షణాల ఆధారంగా రూపొందించబడింది. విజన్ సర్వీస్ అందుబాటులో లేనందున AI ఫోటో విశ్లేషణ తాత్కాలికంగా పనిచేయడం లేదు.'
+              : 'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is temporarily unavailable because the vision service could not be reached.')
+          : (isTelugu
+              ? 'ఎడ్యుకేషనల్ రూల్స్-బేస్డ్ మోడ్ యాక్టివ్‌గా ఉంది. నివేదించబడిన శరీర మార్పు మరియు లక్షణాల ఆధారంగా విశ్లేషణ లెక్కించబడింది.'
+              : 'Educational Rules-Based Mode Active. Assessment calculated from reported physical signs and symptoms.'));
+
+    return {
+      visionAiUsed: false,
+      photoAnalyzed: false,
+      apiKeyNotice,
+      bodyArea: ruleEvaluation.bodyArea,
+      physicalChange: ruleEvaluation.physicalChange,
+      duration: ruleEvaluation.duration,
+      associatedSymptoms,
+      urgencyLevel: ruleEvaluation.urgencyLevel,
+      correlatedNutrients: ruleEvaluation.correlatedNutrients,
+      recommendedFoods,
+      synergies: ruleEvaluation.synergies,
+      redFlags: ruleEvaluation.redFlags,
+      educationalDisclaimer: ruleEvaluation.educationalDisclaimer,
+      nonDiagnosticNotice
+    };
+  }
+
+  /**
+   * Google Gemini Vision 1.5 Flash API invocation via native fetch
+   */
+  static async callGeminiVision({
+    geminiKey,
+    imageBuffer,
+    mimeType,
+    bodyAreaName,
+    changeName,
+    duration,
+    associatedSymptoms,
+    language
+  }) {
+    const isTelugu = language === 'te';
+    const base64Data = imageBuffer.toString('base64');
+
+    const promptText = `
+You are the NutriVita Body Change Vision AI Assistant, an educational nutrition awareness tool.
+Analyze this user-submitted photo of their ${bodyAreaName}.
+Reported physical concern: "${changeName}".
+Reported duration: "${duration}".
+Associated symptoms: ${JSON.stringify(associatedSymptoms)}.
+Language preference: ${language}.
+
+Analyze the visual characteristics in the image (such as surface texture, color shifts, contour, pallor, or scaling) strictly from an educational micronutrient awareness standpoint.
+DO NOT make a definitive medical diagnosis. Provide preventive nutrition education.
+
+You MUST respond strictly with valid JSON conforming to this exact structure:
+{
+  "visualObservations": "Concise 2-3 sentence visual description of what is observable in the image relating to ${bodyAreaName}.",
+  "urgencyLevel": "Mild" | "Moderate" | "Moderate to High" | "Seek Medical Guidance",
+  "correlatedNutrients": [
+    {
+      "nutrient": "Name of nutrient (e.g. Iron, Vitamin C, Zinc)",
+      "confidence": "High" | "Moderate",
+      "rationale": "Scientific rationale connecting this physical sign to this micronutrient."
+    }
+  ],
+  "redFlags": [
+    "Specific warning symptoms that necessitate a qualified doctor visit."
+  ]
+}
+${isTelugu ? 'All descriptions, rationales, and redFlags must be translated into Telugu script.' : ''}
+`;
+
+    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-pro'];
+    let lastError = null;
+
+    for (const model of modelsToTry) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+
+      const payload = {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: promptText },
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: 'application/json'
+        }
+      };
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 35000);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        if (response.status === 404) {
+          continue;
+        }
+
+        if (!response.ok) {
+          const errBody = await response.text().catch(() => '');
+          throw new Error(`Gemini ${model} HTTP error ${response.status}: ${errBody}`);
+        }
+
+        const json = await response.json();
+        const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) return null;
+
+        return JSON.parse(rawText.trim());
+      } catch (err) {
+        lastError = err;
+        console.warn(`Gemini body vision model ${model} attempt notice:`, err.message);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+  }
+
+  /**
+   * Identify ANY food item from image using Google Gemini Multimodal Vision AI.
+   * Recognizes any global food, dish, fruit, vegetable, street food, snack, beverage,
+   * or home-cooked meal without being limited to a predefined catalog.
+   * Estimates nutrition profile for unlisted foods.
+   */
+  static async identifyFoodWithGemini({
+    geminiKey,
+    imageBuffer,
+    mimeType = 'image/jpeg'
+  }) {
+    if (!geminiKey || !imageBuffer) return null;
+    const base64Data = imageBuffer.toString('base64');
+
+    const promptText = `
+You are NutriVita's Expert Universal Food Recognition & Nutritional Analysis Vision AI.
+Carefully analyze the image to identify ANY food, meal, beverage, snack, dish, or raw ingredient visible.
+You support both authentic regional Indian preparations and international global cuisines (e.g. Biryani, Medu Vada, Pineapple, Custard Apple, Pizza, Noodles, Curry, Sandwich, Sushi, Dosa, Tacos, Salad, etc.).
+
+ANALYSIS RULES:
+1. UNIVERSAL RECOGNITION:
+   - Identify ANY food regardless of whether it is well-known or an unfamiliar regional specialty.
+   - Do NOT restrict yourself to a predefined list.
+   - Distinguish visually similar items carefully (e.g. Mango vs Orange, Apple vs Beetroot, Sambar vs Tomato Dal vs Gongura Pappu, Okra vs Bitter Gourd fry).
+2. NON-FOOD & UNCLEAR IMAGES:
+   - If the image clearly DOES NOT contain food (e.g. a person, animal, electronic device, furniture, paper document, clothing, scenery), set "isFood": false, "confidenceLevel": "uncertain", and explain what is visible in "visualObservations".
+   - If the image is too blurry, dark, obscured, or ambiguous to determine the food, set "confidenceLevel": "uncertain" and provide a helpful "clarificationQuestion".
+3. AMBIGUOUS DISHES:
+   - If a dish looks like one of several possibilities (e.g. Chicken Biryani vs Veg Biryani, or Dal Tadka vs Sambar), state the most likely dish in "foodName", set "confidenceLevel": "moderate", list candidates in "possibleAlternatives", and formulate a "clarificationQuestion".
+4. MIXED MEALS & THALIS:
+   - If multiple foods are visible on a plate or meal tray, set "isMultipleFoods": true, report the primary prominent food in "foodName", and list all visible components in "detectedFoods" (e.g. ["Steamed Basmati Rice", "Chicken Curry", "Roti", "Salad"]).
+5. PACKAGED FOODS:
+   - If a commercial packaged food product is shown, set "isPackagedProduct": true and identify the food contents.
+6. NUTRITIONAL ESTIMATION FOR THIS FOOD:
+   - Provide realistic, scientifically grounded nutritional estimations per standard serving.
+   - State the estimated portion weight in grams.
+   - Include calories, protein (g), carbohydrates (g), total fat (g), dietary fiber (g), saturated fat (g), total sugars (g), and sodium (mg).
+   - List key vitamins and minerals if notable (e.g. Vitamin C, Iron, Calcium, Vitamin A).
+   - In "preparationNotes", note that cooking oil, ghee, and recipes can cause homemade dishes to vary in caloric and fat content.
+
+You MUST respond strictly with valid JSON conforming to this exact schema (no prose outside JSON):
+{
+  "isFood": true,
+  "foodName": "Specific common name of the food or dish",
+  "teluguName": "Telugu name with Telugu script if known (e.g. అనాస పండు, చికెన్ బిర్యానీ, మేదు వడ, etc.)",
+  "category": "fruits" | "vegetables" | "grains_millets" | "pulses_legumes" | "dairy" | "snacks" | "prepared_meals" | "meat_poultry_seafood" | "bakery" | "beverages",
+  "confidenceLevel": "high" | "moderate" | "uncertain",
+  "visualObservations": "1-2 sentence description explaining visible colors, textures, shapes, and cooking markers.",
+  "isMultipleFoods": false,
+  "detectedFoods": ["Visible Component 1", "Visible Component 2"],
+  "isPackagedProduct": false,
+  "clarificationNeeded": false,
+  "clarificationQuestion": "Optional question if ambiguous or if confirmation is helpful",
+  "possibleAlternatives": ["Alternative 1", "Alternative 2"],
+  "estimatedServing": {
+    "size": "1 typical serving (approx. 200g)",
+    "grams": 200
+  },
+  "estimatedNutrition": {
+    "calories": 250,
+    "servingBasis": "per_serving",
+    "protein": 8.0,
+    "carbohydrates": 38.0,
+    "totalFat": 7.5,
+    "dietaryFiber": 4.0,
+    "saturatedFat": 2.0,
+    "totalSugars": 4.0,
+    "sodium": 340,
+    "keyVitamins": ["Vitamin C: ~15mg", "Vitamin A: ~60mcg"],
+    "keyMinerals": ["Iron: ~1.8mg", "Calcium: ~40mg"],
+    "keyNutrientsSummary": ["Dietary Fiber", "Complex Carbs", "Protein"]
+  },
+  "nutritionalBenefits": "1-2 sentence evidence-based dietary benefit summary.",
+  "servingGuidance": "Practical serving advice (e.g. pair with salad or yogurt).",
+  "preparationNotes": "Culinary note explaining recipe/oil variations for this dish."
+}
+`;
+
+    // Try modern supported Gemini models in prioritized order
+    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-pro'];
+    let lastError = null;
+
+    for (const model of modelsToTry) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const payload = {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: promptText },
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json'
+        }
+      };
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 35000);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        if (response.status === 404) {
+          // Model not found in this API version/region, try next model
+          continue;
+        }
+
+        if (!response.ok) {
+          const errBody = await response.text().catch(() => '');
+          throw new Error(`Gemini ${model} HTTP error ${response.status}: ${errBody}`);
+        }
+
+        const json = await response.json();
+        const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) return null;
+
+        const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+        return JSON.parse(cleanJson);
+      } catch (err) {
+        lastError = err;
+        console.warn(`Gemini model ${model} attempt notice:`, err.message);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+    return null;
+  }
+
+  /**
+   * Estimate nutrition profile for any specified food name using Gemini
+   * Used when a user manually corrects the food identification or requests a custom food.
+   */
+  static async estimateNutritionForFoodName({
+    foodName,
+    portionGrams = 150,
+    geminiKey
+  }) {
+    if (!geminiKey || !foodName) return null;
+
+    const promptText = `
+You are NutriVita's Nutritional Intelligence specialist.
+Calculate realistic, evidence-based nutritional estimations for: "${foodName}".
+Portion size: ${portionGrams}g.
+
+Respond strictly with valid JSON conforming to this schema:
+{
+  "foodName": "${foodName}",
+  "teluguName": "Telugu name if known",
+  "category": "fruits" | "vegetables" | "grains_millets" | "pulses_legumes" | "dairy" | "snacks" | "prepared_meals" | "meat_poultry_seafood" | "bakery" | "beverages",
+  "estimatedServing": {
+    "size": "${portionGrams}g serving",
+    "grams": ${portionGrams}
+  },
+  "estimatedNutrition": {
+    "calories": 200,
+    "servingBasis": "per_serving",
+    "protein": 5.0,
+    "carbohydrates": 25.0,
+    "totalFat": 6.0,
+    "dietaryFiber": 3.0,
+    "saturatedFat": 1.5,
+    "totalSugars": 3.0,
+    "sodium": 250,
+    "keyVitamins": ["Vitamin C: ~10mg", "Vitamin A: ~40mcg"],
+    "keyMinerals": ["Iron: ~1.2mg", "Calcium: ~35mg"],
+    "keyNutrientsSummary": ["Dietary Fiber", "Protein"]
+  },
+  "nutritionalBenefits": "Concise 1-2 sentence evidence-based dietary summary.",
+  "servingGuidance": "Practical healthy serving suggestion.",
+  "preparationNotes": "Note on cooking oil, salt, and recipe variance."
+}
+`;
+
+    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash'];
+    let lastError = null;
+
+    for (const model of modelsToTry) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const payload = {
+        contents: [{ role: 'user', parts: [{ text: promptText }] }],
+        generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+      };
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        if (response.status === 404) continue;
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          throw new Error(`Gemini ${model} error: ${errText}`);
+        }
+
+        const json = await response.json();
+        const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) return null;
+
+        const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+        return JSON.parse(cleanJson);
+      } catch (err) {
+        lastError = err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+  }
+
+  /**
+   * OpenAI GPT-4o-mini Vision API invocation fallback
+   */
+  static async callOpenAIVision({
+    openAIKey,
+    imageBuffer,
+    mimeType,
+    bodyAreaName,
+    changeName,
+    duration,
+    language
+  }) {
+    const base64Data = imageBuffer.toString('base64');
+    const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+    const promptText = `
+You are NutriVita's educational Body Change Vision AI. Analyze the photo of ${bodyAreaName} regarding ${changeName} (duration: ${duration}).
+Respond strictly with valid JSON:
+{
+  "visualObservations": "Concise visual observation.",
+  "urgencyLevel": "Mild" | "Moderate" | "Seek Medical Guidance",
+  "correlatedNutrients": [
+    { "nutrient": "string", "confidence": "High"|"Moderate", "rationale": "string" }
+  ],
+  "redFlags": ["string"]
+}
+`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${openAIKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: promptText },
+                { type: 'image_url', image_url: { url: dataUrl } }
+              ]
+            }
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 500
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI HTTP ${response.status}`);
+      }
+
+      const json = await response.json();
+      const text = json?.choices?.[0]?.message?.content;
+      return text ? JSON.parse(text) : null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
