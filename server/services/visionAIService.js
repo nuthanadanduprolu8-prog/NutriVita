@@ -11,17 +11,63 @@ export class VisionAIService {
   static _healthCache = null;
 
   /**
+   * Retrieves, normalizes, and sanitizes the Gemini API key from environment variables.
+   * Checks GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, GOOGLE_GEMINI_API_KEY.
+   * Strips surrounding quotes (" or ') and whitespace/newlines.
+   */
+  static getApiKeyInfo() {
+    const candidates = [
+      { name: 'GEMINI_API_KEY', val: process.env.GEMINI_API_KEY },
+      { name: 'GOOGLE_API_KEY', val: process.env.GOOGLE_API_KEY },
+      { name: 'GEMINI_KEY', val: process.env.GEMINI_KEY },
+      { name: 'GOOGLE_GEMINI_API_KEY', val: process.env.GOOGLE_GEMINI_API_KEY },
+    ];
+
+    for (const c of candidates) {
+      if (c.val && typeof c.val === 'string') {
+        const cleaned = c.val.trim().replace(/^["']|["']$/g, '').trim();
+        if (cleaned.length > 0) {
+          return {
+            key: cleaned,
+            envVarName: c.name,
+            maskedPrefix: cleaned.length >= 4 ? `${cleaned.slice(0, 4)}...` : '***',
+            length: cleaned.length
+          };
+        }
+      }
+    }
+
+    return {
+      key: null,
+      envVarName: null,
+      maskedPrefix: null,
+      length: 0
+    };
+  }
+
+  /**
+   * Returns the sanitized Gemini API key string or null if not configured.
+   */
+  static getApiKey() {
+    return this.getApiKeyInfo().key;
+  }
+
+  /**
    * Health and reachability probe for Google Gemini Vision
    */
   static async checkVisionHealth(force = false) {
-    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    const keyInfo = this.getApiKeyInfo();
+    const geminiKey = keyInfo.key;
+
     if (!geminiKey) {
+      console.warn('[VisionAIService] Health check: No Gemini API key detected in environment. Checked: GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, GOOGLE_GEMINI_API_KEY.');
       return {
         configured: false,
         reachable: false,
         provider: null,
         status: 'unconfigured',
-        message: 'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is currently unavailable because the vision service has not been configured.'
+        envVarName: null,
+        message: 'Educational Rules-Based Mode Active. AI-powered photo analysis is currently unavailable because the vision service has not been configured in Render environment variables.'
       };
     }
 
@@ -29,16 +75,23 @@ export class VisionAIService {
       return this._healthCache.data;
     }
 
+    console.log(`[VisionAIService] Probing Gemini Vision health (Key source: ${keyInfo.envVarName}, prefix: ${keyInfo.maskedPrefix}, length: ${keyInfo.length})...`);
+
     try {
-      // Probe active Gemini models in order of Google availability
-      const probeModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-pro'];
+      // Actively supported Gemini models with generateContent capability
+      const probeModels = [
+        'gemini-flash-latest',
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.8-flash'
+      ];
       let reachableModel = null;
       let lastErrMsg = '';
 
       for (const model of probeModels) {
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 6000);
+          const timeout = setTimeout(() => controller.abort(), 8000);
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${geminiKey}`, {
             method: 'GET',
             signal: controller.signal
@@ -51,43 +104,51 @@ export class VisionAIService {
           } else {
             const errJson = await res.json().catch(() => ({}));
             lastErrMsg = errJson?.error?.message || `HTTP ${res.status}`;
+            console.warn(`[VisionAIService] Probe model ${model} returned HTTP ${res.status}: ${lastErrMsg}`);
           }
         } catch (e) {
           lastErrMsg = e.message;
+          console.warn(`[VisionAIService] Probe model ${model} network notice: ${e.message}`);
         }
       }
 
       if (reachableModel) {
+        console.log(`[VisionAIService] Gemini Vision probe successful. Active model: "${reachableModel}".`);
         const data = {
           configured: true,
           reachable: true,
           provider: 'Google Gemini Flash Vision AI',
           model: reachableModel,
+          envVarName: keyInfo.envVarName,
           status: 'active',
           message: `Google Gemini Vision AI (${reachableModel}) is active and reachable.`
         };
         this._healthCache = { timestamp: Date.now(), data };
         return data;
       } else {
+        console.error(`[VisionAIService] Gemini Vision probe failed across tested models. Last error: ${lastErrMsg}`);
         const data = {
           configured: true,
           reachable: false,
           provider: 'Google Gemini Flash Vision AI',
+          envVarName: keyInfo.envVarName,
           status: 'error',
           error: lastErrMsg,
-          message: 'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is temporarily unavailable because the vision service could not be reached.'
+          message: `Educational Rules-Based Mode Active. AI-powered photo analysis is temporarily unavailable: ${lastErrMsg}`
         };
         this._healthCache = { timestamp: Date.now(), data };
         return data;
       }
     } catch (err) {
+      console.error(`[VisionAIService] Gemini Vision probe unexpected exception: ${err.message}`);
       const data = {
         configured: true,
         reachable: false,
         provider: 'Google Gemini Flash Vision AI',
+        envVarName: keyInfo.envVarName,
         status: 'error',
         error: err.message,
-        message: 'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is temporarily unavailable because the vision service could not be reached.'
+        message: `Educational Rules-Based Mode Active. AI-powered photo analysis could not reach the vision provider: ${err.message}`
       };
       this._healthCache = { timestamp: Date.now(), data };
       return data;
@@ -107,7 +168,7 @@ export class VisionAIService {
     language = 'en'
   }) {
     const isTelugu = language === 'te';
-    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    const geminiKey = this.getApiKey();
     const openAIKey = process.env.OPENAI_API_KEY?.trim();
 
     // Baseline rule-based knowledge evaluation
@@ -288,7 +349,12 @@ You MUST respond strictly with valid JSON conforming to this exact structure:
 ${isTelugu ? 'All descriptions, rationales, and redFlags must be translated into Telugu script.' : ''}
 `;
 
-    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-pro'];
+    const modelsToTry = [
+      'gemini-flash-latest',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash'
+    ];
     let lastError = null;
 
     for (const model of modelsToTry) {
@@ -326,7 +392,8 @@ ${isTelugu ? 'All descriptions, rationales, and redFlags must be translated into
           signal: controller.signal
         });
 
-        if (response.status === 404) {
+        if (response.status === 404 || response.status === 503 || response.status === 429) {
+          console.warn(`[VisionAIService] Body vision model ${model} returned HTTP ${response.status}, trying fallback model...`);
           continue;
         }
 
@@ -339,10 +406,11 @@ ${isTelugu ? 'All descriptions, rationales, and redFlags must be translated into
         const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawText) return null;
 
+        console.log(`[VisionAIService] Body vision successfully evaluated using model ${model}.`);
         return JSON.parse(rawText.trim());
       } catch (err) {
         lastError = err;
-        console.warn(`Gemini body vision model ${model} attempt notice:`, err.message);
+        console.warn(`[VisionAIService] Gemini body vision model ${model} attempt notice:`, err.message);
       } finally {
         clearTimeout(timeout);
       }
@@ -363,7 +431,8 @@ ${isTelugu ? 'All descriptions, rationales, and redFlags must be translated into
     imageBuffer,
     mimeType = 'image/jpeg'
   }) {
-    if (!geminiKey || !imageBuffer) return null;
+    const key = geminiKey || this.getApiKey();
+    if (!key || !imageBuffer) return null;
     const base64Data = imageBuffer.toString('base64');
 
     const promptText = `
@@ -431,11 +500,18 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
 `;
 
     // Try modern supported Gemini models in prioritized order
-    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-pro'];
+    const modelsToTry = [
+      'gemini-flash-latest',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash'
+    ];
     let lastError = null;
 
+    console.log(`[VisionAIService] Calling Gemini Vision for food recognition (image: ${imageBuffer.length} bytes, mimetype: ${mimeType})...`);
+
     for (const model of modelsToTry) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
       const payload = {
         contents: [
           {
@@ -468,8 +544,8 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
           signal: controller.signal
         });
 
-        if (response.status === 404) {
-          // Model not found in this API version/region, try next model
+        if (response.status === 404 || response.status === 503 || response.status === 429) {
+          console.warn(`[VisionAIService] Food identification model ${model} returned HTTP ${response.status}, falling back to next model...`);
           continue;
         }
 
@@ -483,10 +559,12 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
         if (!rawText) return null;
 
         const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-        return JSON.parse(cleanJson);
+        const parsed = JSON.parse(cleanJson);
+        console.log(`[VisionAIService] Food recognition successful via model "${model}": "${parsed.foodName}" (isFood: ${parsed.isFood}, confidence: ${parsed.confidenceLevel})`);
+        return parsed;
       } catch (err) {
         lastError = err;
-        console.warn(`Gemini model ${model} attempt notice:`, err.message);
+        console.warn(`[VisionAIService] Food recognition model ${model} attempt notice:`, err.message);
       } finally {
         clearTimeout(timeout);
       }
@@ -507,7 +585,8 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
     portionGrams = 150,
     geminiKey
   }) {
-    if (!geminiKey || !foodName) return null;
+    const key = geminiKey || this.getApiKey();
+    if (!key || !foodName) return null;
 
     const promptText = `
 You are NutriVita's Nutritional Intelligence specialist.
@@ -543,11 +622,16 @@ Respond strictly with valid JSON conforming to this schema:
 }
 `;
 
-    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash'];
+    const modelsToTry = [
+      'gemini-flash-latest',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash'
+    ];
     let lastError = null;
 
     for (const model of modelsToTry) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
       const payload = {
         contents: [{ role: 'user', parts: [{ text: promptText }] }],
         generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
@@ -564,7 +648,7 @@ Respond strictly with valid JSON conforming to this schema:
           signal: controller.signal
         });
 
-        if (response.status === 404) continue;
+        if (response.status === 404 || response.status === 503 || response.status === 429) continue;
         if (!response.ok) {
           const errText = await response.text().catch(() => '');
           throw new Error(`Gemini ${model} error: ${errText}`);
@@ -663,7 +747,8 @@ Respond strictly with valid JSON:
     imageBuffer,
     mimeType = 'image/jpeg'
   }) {
-    if (!geminiKey || !imageBuffer) return null;
+    const key = geminiKey || this.getApiKey();
+    if (!key || !imageBuffer) return null;
     const base64Data = imageBuffer.toString('base64');
 
     const promptText = `
@@ -708,11 +793,18 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
 }
 `;
 
-    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-pro'];
+    const modelsToTry = [
+      'gemini-flash-latest',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash'
+    ];
     let lastError = null;
 
+    console.log(`[VisionAIService] Calling Gemini Vision for nutrition label analysis (image: ${imageBuffer.length} bytes, mimetype: ${mimeType})...`);
+
     for (const model of modelsToTry) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
       const payload = {
         contents: [
           {
@@ -745,7 +837,11 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
           signal: controller.signal
         });
 
-        if (response.status === 404) continue;
+        if (response.status === 404 || response.status === 503 || response.status === 429) {
+          console.warn(`[VisionAIService] Nutrition label model ${model} returned HTTP ${response.status}, falling back to next model...`);
+          continue;
+        }
+
         if (!response.ok) {
           const errBody = await response.text().catch(() => '');
           throw new Error(`Gemini ${model} HTTP error ${response.status}: ${errBody}`);
@@ -756,10 +852,12 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
         if (!rawText) return null;
 
         const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-        return JSON.parse(cleanJson);
+        const parsed = JSON.parse(cleanJson);
+        console.log(`[VisionAIService] Nutrition label analysis successful via model "${model}": isNutritionLabel=${parsed.isNutritionLabel}, product="${parsed.productName || 'unnamed'}"`);
+        return parsed;
       } catch (err) {
         lastError = err;
-        console.warn(`Gemini nutrition label model ${model} notice:`, err.message);
+        console.warn(`[VisionAIService] Nutrition label model ${model} attempt notice:`, err.message);
       } finally {
         clearTimeout(timeout);
       }

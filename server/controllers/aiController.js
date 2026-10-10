@@ -1,5 +1,6 @@
 import { foodsData } from '../data/foodsData.js';
 import { vitaminsData } from '../data/vitaminsData.js';
+import { VisionAIService } from '../services/visionAIService.js';
 
 // Medical disclaimer strings
 const CSP_DISCLAIMER_EN = 'Note: NutriVita provides preventive nutrition guidance for community health education and dietary awareness. This information is not a medical diagnosis or treatment plan. For persistent, severe, or unexplained symptoms, please consult a qualified healthcare professional.';
@@ -423,7 +424,7 @@ const generateDeterministicResponse = (userMessage, language = 'en', userProfile
 
 // Optional External LLM Integration (e.g., Gemini API) with automatic fallback
 const callExternalLLM = async (userMessage, history = [], language = 'en') => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = VisionAIService.getApiKey();
   if (!apiKey) return null;
 
   try {
@@ -449,7 +450,13 @@ CRITICAL MANDATES:
       { role: 'user', parts: [{ text: userMessage }] }
     ];
 
-    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash'];
+    const modelsToTry = [
+      'gemini-2.5-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite'
+    ];
     let candidateText = null;
 
     for (const model of modelsToTry) {
@@ -461,7 +468,7 @@ CRITICAL MANDATES:
           body: JSON.stringify({ contents }),
         });
 
-        if (response.status === 404) continue;
+        if (response.status === 404 || response.status === 503) continue;
         if (!response.ok) {
           console.warn(`[Gemini API ${model}] Call failed with status ${response.status}.`);
           continue;

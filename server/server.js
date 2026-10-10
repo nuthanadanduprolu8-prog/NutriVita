@@ -13,6 +13,7 @@ import aiRoutes from './routes/aiRoutes.js';
 import symptomRoutes from './routes/symptomRoutes.js';
 import bodyAnalyzerRoutes from './routes/bodyAnalyzerRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
+import { VisionAIService } from './services/visionAIService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,6 +89,21 @@ const server = app.listen(PORT, () => {
   console.log(`🍽️ Meals API: http://localhost:${PORT}/api/meals`);
   console.log(`✨ VitaMate AI API: http://localhost:${PORT}/api/ai`);
   console.log(`🩺 Symptoms API: http://localhost:${PORT}/api/symptoms`);
+
+  // Non-blocking vision health probe for Render startup diagnostic logs
+  VisionAIService.checkVisionHealth(true)
+    .then((health) => {
+      if (health.reachable) {
+        console.log(`🤖 [Startup] Vision AI Service is ONLINE: ${health.provider} (${health.model}) [Key: ${health.envVarName}]`);
+      } else if (health.configured) {
+        console.warn(`⚠️ [Startup] Vision AI key detected in ${health.envVarName}, but probe failed: ${health.error}`);
+      } else {
+        console.warn('ℹ️ [Startup] Vision AI key not configured in environment (GEMINI_API_KEY/GOOGLE_API_KEY). Running in educational rules-based mode.');
+      }
+    })
+    .catch((err) => {
+      console.warn('⚠️ [Startup] Vision AI probe notice:', err.message);
+    });
 });
 
 export default app;

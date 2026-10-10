@@ -299,6 +299,46 @@ async function runProductionFixesTests() {
     assert(false, '3c. Portion scaling test failed', err.message);
   }
 
+  // -------------------------------------------------------------
+  // GROUP 4: GEMINI KEY SANITIZATION, MULTI-ENV RESOLUTION & HEALTH PROBE
+  // -------------------------------------------------------------
+  console.log('\n📋 Test Group 4: Gemini Key Sanitization, Multi-Env Resolution & Health Probe');
+  try {
+    const { VisionAIService } = await import('./server/services/visionAIService.js');
+
+    // 4a. getApiKeyInfo correctly detects key
+    const info = VisionAIService.getApiKeyInfo();
+    assert(Boolean(info.key), '4a. VisionAIService detects active Gemini API key in environment');
+    assert(info.envVarName === 'GEMINI_API_KEY' || info.envVarName === 'GOOGLE_API_KEY', '4b. Resolves key from standard env variable');
+    assert(info.maskedPrefix && !info.maskedPrefix.includes(info.key), '4c. Masks API key prefix safely without leaking full secret');
+
+    // 4d. Sanitization test with quotes and whitespace
+    const origKey = process.env.GEMINI_API_KEY;
+    const origGoogle = process.env.GOOGLE_API_KEY;
+    try {
+      delete process.env.GEMINI_API_KEY;
+      process.env.GOOGLE_API_KEY = '  "test_sanitized_key_12345"  \r\n';
+      const sanitizedInfo = VisionAIService.getApiKeyInfo();
+      assert(sanitizedInfo.key === 'test_sanitized_key_12345', '4d. Strips leading/trailing quotes, carriage returns and whitespace');
+      assert(sanitizedInfo.envVarName === 'GOOGLE_API_KEY', '4e. Seamlessly falls back to GOOGLE_API_KEY when GEMINI_API_KEY is not set');
+
+      delete process.env.GOOGLE_API_KEY;
+      const unconfiguredInfo = VisionAIService.getApiKeyInfo();
+      assert(unconfiguredInfo.key === null, '4f. Returns null cleanly when no vision key is configured in any env variable');
+    } finally {
+      if (origKey) process.env.GEMINI_API_KEY = origKey;
+      if (origGoogle) process.env.GOOGLE_API_KEY = origGoogle;
+    }
+
+    // 4g. checkVisionHealth probe against live Google Gemini API
+    const health = await VisionAIService.checkVisionHealth(true);
+    assert(health.configured === true, '4g. checkVisionHealth marks service as configured');
+    assert(health.reachable === true, '4h. checkVisionHealth successfully connects to Gemini API model');
+    assert(Boolean(health.model), `4i. Active reachable model identified: ${health.model}`);
+  } catch (err) {
+    assert(false, 'Group 4 test execution error', err.message);
+  }
+
   console.log('\n========================================================');
   console.log(`🏁 TEST RESULTS: ${passed} / ${total} Tests Passed`);
   console.log('========================================================\n');

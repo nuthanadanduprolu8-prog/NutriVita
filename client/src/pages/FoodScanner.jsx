@@ -525,6 +525,44 @@ const FoodScanner = () => {
             </Card>
           )}
 
+          {/* Vision AI Error / Unconfigured Notice Card */}
+          {scanResult && !scanResult.matched && scanResult.isFood !== false && !scanning && (
+            <Card className="p-6 space-y-4 border-amber-200 bg-amber-50/40">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-amber-950">
+                    Vision AI Analysis Notice
+                  </h3>
+                  <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                    {uploadError || scanResult.message || 'Vision AI could not analyze this photo at this moment.'}
+                  </p>
+                </div>
+              </div>
+
+              {scanResult.popularWholeFoods && scanResult.popularWholeFoods.length > 0 && (
+                <div className="pt-2 border-t border-amber-200/60 space-y-2">
+                  <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Or select from verified foods to inspect laboratory nutrition:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {scanResult.popularWholeFoods.slice(0, 8).map((food) => (
+                      <button
+                        key={food.id}
+                        onClick={() => handleQuickSelectFood(food)}
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 transition-colors cursor-pointer shadow-2xs"
+                      >
+                        {food.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Success: Matched Food Result (Verified DB OR Universal Food) */}
           {scanResult?.matched && !scanning && (
             <Card className="p-6 space-y-5 border-emerald-200 shadow-soft-lg">

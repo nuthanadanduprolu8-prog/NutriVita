@@ -190,7 +190,7 @@ export const identifyFood = async (req, res, next) => {
   try {
     const file = req.file;
     const { foodId, labelHint, filename } = req.body;
-    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    const geminiKey = VisionAIService.getApiKey();
 
     const allFoods = [...memoryStore.foods];
     const popularWholeFoods = POPULAR_WHOLE_FOOD_IDS
@@ -237,14 +237,18 @@ export const identifyFood = async (req, res, next) => {
       });
     }
 
+    console.log(`[Scanner] POST /identify - Image upload received: size=${file.size}B, mimetype=${file.mimetype}`);
+
     // 2. Check Vision AI configuration & reachability
     const health = await VisionAIService.checkVisionHealth();
     if (!health.configured || !health.reachable) {
+      console.warn(`[Scanner] POST /identify - Vision AI not ready. Configured=${health.configured}, Reachable=${health.reachable}, Source=${health.envVarName || 'none'}`);
       return res.status(200).json({
         success: false,
         visionAiAvailable: false,
-        source: 'unconfigured',
+        source: health.configured ? 'service_unreachable' : 'unconfigured',
         matched: null,
+        error: health.error || null,
         message: health.message,
         popularWholeFoods,
         allFoodsCount: allFoods.length,
@@ -260,14 +264,14 @@ export const identifyFood = async (req, res, next) => {
         mimeType: file.mimetype || 'image/jpeg',
       });
     } catch (aiErr) {
-      console.warn('Gemini vision processing notice:', aiErr.message);
+      console.error('[Scanner] POST /identify - Gemini vision processing error:', aiErr.message);
       return res.status(200).json({
         success: false,
         visionAiAvailable: false,
         source: 'vision_error',
         matched: null,
         error: aiErr.message,
-        message: 'Vision AI service could not analyze this image. Please select from verified foods below or try again.',
+        message: `Vision AI service could not analyze this image (${aiErr.message}). Please select from verified foods below or try again.`,
         popularWholeFoods,
       });
     }
@@ -419,7 +423,7 @@ export const correctOrRecalculateFood = async (req, res, next) => {
   try {
     const { foodName, currentFood, targetWeightGrams, portionMultiplier = 1 } = req.body;
     const allFoods = [...memoryStore.foods];
-    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    const geminiKey = VisionAIService.getApiKey();
 
     // Case 1: Portion adjustment on an existing food
     if (currentFood && targetWeightGrams && !foodName) {
@@ -686,7 +690,7 @@ export const getPopularWholeFoods = async (req, res, next) => {
 export const analyzeLabel = async (req, res, next) => {
   try {
     const file = req.file;
-    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    const geminiKey = VisionAIService.getApiKey();
 
     if (!file || !file.buffer || file.buffer.length === 0) {
       return res.status(400).json({
@@ -695,13 +699,16 @@ export const analyzeLabel = async (req, res, next) => {
       });
     }
 
+    console.log(`[Scanner] POST /analyze-label - Label upload received: size=${file.size}B, mimetype=${file.mimetype}`);
+
     const health = await VisionAIService.checkVisionHealth();
     if (!health.configured || !health.reachable) {
+      console.warn(`[Scanner] POST /analyze-label - Vision AI not ready. Configured=${health.configured}, Reachable=${health.reachable}, Source=${health.envVarName || 'none'}`);
       return res.status(200).json({
         success: false,
         visionAiAvailable: false,
-        source: 'unconfigured',
-        error: health.message,
+        source: health.configured ? 'service_unreachable' : 'unconfigured',
+        error: health.error || health.message,
         message: health.message || 'Vision AI service is currently unavailable. You can enter label values manually.',
       });
     }
@@ -714,13 +721,13 @@ export const analyzeLabel = async (req, res, next) => {
         mimeType: file.mimetype || 'image/jpeg',
       });
     } catch (aiErr) {
-      console.warn('Gemini label analysis notice:', aiErr.message);
+      console.error('[Scanner] POST /analyze-label - Gemini label analysis error:', aiErr.message);
       return res.status(200).json({
         success: false,
         visionAiAvailable: false,
         source: 'vision_error',
         error: aiErr.message,
-        message: 'Vision AI could not read this label clearly. Please enter values manually or try another photo.',
+        message: `Vision AI could not read this label clearly (${aiErr.message}). Please enter values manually or try another photo.`,
       });
     }
 
