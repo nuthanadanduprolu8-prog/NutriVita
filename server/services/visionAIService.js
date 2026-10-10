@@ -653,4 +653,120 @@ Respond strictly with valid JSON:
       clearTimeout(timeout);
     }
   }
+
+  /**
+   * Analyze food package or nutrition facts label image directly using Gemini Multimodal Vision.
+   * Extracts numerical nutrients, serving size, basis, and ingredients.
+   */
+  static async analyzeNutritionLabelWithGemini({
+    geminiKey,
+    imageBuffer,
+    mimeType = 'image/jpeg'
+  }) {
+    if (!geminiKey || !imageBuffer) return null;
+    const base64Data = imageBuffer.toString('base64');
+
+    const promptText = `
+You are NutriVita's Expert Nutrition Label Analysis & Optical Recognition AI.
+Carefully inspect the provided image of a food packaging, label, or nutrition facts table.
+
+TASK:
+1. Detect whether this image contains a printed nutrition facts table, nutrition panel, or packaged food label.
+2. Extract all available nutrition numbers per serving or per 100g.
+3. If this is a fresh whole food (like an apple, orange, banana, or fresh produce) with NO printed label on the packaging, set "isNutritionLabel": false.
+4. Extract product name, brand, serving size, and serving basis ("per_serving" or "per_100g").
+5. Extract ingredients and allergen warnings if visible.
+
+Respond strictly with valid JSON conforming to this schema (no markdown formatting outside JSON):
+{
+  "isNutritionLabel": true,
+  "confidence": "high" | "medium" | "low",
+  "productName": "string or null",
+  "brand": "string or null",
+  "servingSize": "string or null (e.g. 1 bar (40g), 100g, 1 cup)",
+  "servingBasis": "per_serving" | "per_100g",
+  "calories": number or null,
+  "energyKj": number or null,
+  "totalFat": number or null,
+  "saturatedFat": number or null,
+  "transFat": number or null,
+  "carbohydrates": number or null,
+  "totalSugars": number or null,
+  "addedSugars": number or null,
+  "fiber": number or null,
+  "protein": number or null,
+  "sodium": number or null,
+  "salt": number or null,
+  "calcium": number or null,
+  "iron": number or null,
+  "vitaminC": number or null,
+  "vitaminD": number or null,
+  "potassium": number or null,
+  "ingredients": "string or null",
+  "allergens": "string or null",
+  "rawTextSummary": "Key visible printed label text"
 }
+`;
+
+    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-pro'];
+    let lastError = null;
+
+    for (const model of modelsToTry) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const payload = {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: promptText },
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json'
+        }
+      };
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 35000);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        if (response.status === 404) continue;
+        if (!response.ok) {
+          const errBody = await response.text().catch(() => '');
+          throw new Error(`Gemini ${model} HTTP error ${response.status}: ${errBody}`);
+        }
+
+        const json = await response.json();
+        const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) return null;
+
+        const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+        return JSON.parse(cleanJson);
+      } catch (err) {
+        lastError = err;
+        console.warn(`Gemini nutrition label model ${model} notice:`, err.message);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+  }
+}
+

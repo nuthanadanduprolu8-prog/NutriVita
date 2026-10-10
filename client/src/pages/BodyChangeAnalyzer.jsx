@@ -33,6 +33,7 @@ import CameraModal from '../components/common/CameraModal';
 import BackButton from '../components/common/BackButton';
 import { getVerifiedFoodImageUrl } from '../utils/foodImageFallback';
 import { DEFAULT_BODY_AREAS } from '../data/bodyAreasFallback';
+import bodyAnalyzerService from '../services/bodyAnalyzerService';
 
 const ASSOCIATED_SYMPTOM_OPTIONS = [
   { id: 'fatigue', en: 'Persistent Daytime Fatigue', te: 'పగటిపూట నిరంతరం అలసట' },
@@ -80,20 +81,18 @@ const BodyChangeAnalyzer = () => {
   const [analyzerStatus, setAnalyzerStatus] = useState(null);
   const [showModesModal, setShowModesModal] = useState(false);
 
-  // Fetch areas metadata and analyzer status on mount
+  // Fetch areas metadata and analyzer status on mount using centralized API client
   useEffect(() => {
-    fetch('/api/body-analyzer/status')
-      .then((res) => res.json())
+    bodyAnalyzerService.getStatus()
       .then((data) => {
-        if (data.success) setAnalyzerStatus(data);
+        if (data?.success) setAnalyzerStatus(data);
       })
-      .catch((err) => console.warn('Body analyzer status notice:', err));
+      .catch((err) => console.warn('Body analyzer status notice:', err.message || err));
 
     const fetchAreas = async () => {
       try {
-        const res = await fetch(`/api/body-analyzer/areas?language=${language}`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.data)) {
+        const data = await bodyAnalyzerService.getAreas(language);
+        if (data?.success && Array.isArray(data.data)) {
           setAreas(data.data);
           if (data.data.length > 0) {
             setSelectedAreaId(data.data[0].id);
@@ -103,7 +102,7 @@ const BodyChangeAnalyzer = () => {
           }
         }
       } catch (err) {
-        console.error('Failed to fetch body areas:', err);
+        console.warn('Using default fallback body areas:', err.message || err);
       } finally {
         setLoadingAreas(false);
       }
@@ -222,21 +221,17 @@ const BodyChangeAnalyzer = () => {
         formData.append('photo', selectedFile);
       }
 
-      const res = await fetch('/api/body-analyzer/assess', {
-        method: 'POST',
-        body: formData
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.message || 'Failed to complete physical sign analysis.');
+      const json = await bodyAnalyzerService.assess(formData);
+      if (!json?.success) {
+        throw new Error(json?.message || 'Failed to complete physical sign analysis.');
       }
 
       setAssessmentResult(json.data);
       window.scrollTo({ top: 380, behavior: 'smooth' });
     } catch (err) {
       console.error('Assessment error:', err);
-      setAnalysisError(err.message || 'Error occurred while analyzing physical sign.');
+      const msg = err.response?.data?.message || err.message || 'Error occurred while analyzing physical sign.';
+      setAnalysisError(msg);
     } finally {
       setIsAnalyzing(false);
     }

@@ -4,7 +4,8 @@ import {
   searchFoodsFallback, 
   getScannerStatus, 
   getPopularWholeFoods,
-  correctOrRecalculateFood
+  correctOrRecalculateFood,
+  analyzeLabel
 } from '../controllers/scannerController.js';
 import { upload, handleUploadError } from '../middleware/uploadMiddleware.js';
 
@@ -13,6 +14,7 @@ const router = express.Router();
 router.get('/status', getScannerStatus);
 router.get('/popular-foods', getPopularWholeFoods);
 router.post('/identify', upload.single('image'), handleUploadError, identifyFood);
+router.post('/analyze-label', upload.single('image'), handleUploadError, analyzeLabel);
 router.post('/correct', correctOrRecalculateFood);
 router.get('/search', searchFoodsFallback);
 

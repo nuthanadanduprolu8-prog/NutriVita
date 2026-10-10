@@ -124,9 +124,12 @@ const FoodScanner = () => {
         const baseGrams = res.matched.servingWeightGrams || 150;
         setCustomGrams(baseGrams);
         setPortionMultiplier(1);
+      } else if (!res.success && res.isFood !== false) {
+        const msg = res.message || res.error || 'Vision AI could not identify this food image.';
+        setUploadError(msg);
       }
     } catch (err) {
-      const msg = err.response?.data?.message || 'Scanning encountered an error. Please try again or use manual search.';
+      const msg = err.response?.data?.message || err.message || 'Scanning encountered an error. Please try again or use manual search.';
       setUploadError(msg);
     } finally {
       setScanning(false);

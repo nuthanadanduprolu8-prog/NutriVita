@@ -38,6 +38,8 @@ import {
   calculateEducationalGrade,
   getEmptyNutritionValues
 } from '../utils/nutritionLabelParser';
+import scannerService from '../services/scannerService';
+import foodService from '../services/foodService';
 
 // Curated sample package nutrition labels for instant demonstration & testing
 const SAMPLE_LABELS = [
@@ -220,28 +222,25 @@ const LabelLens = () => {
   const [allFoodsList, setAllFoodsList] = useState([]);
   const [foodSearchTerm, setFoodSearchTerm] = useState('');
 
-  // Fetch scanner status and popular whole foods on mount
+  // Fetch scanner status and popular whole foods on mount using centralized API client
   useEffect(() => {
-    fetch('/api/scanner/status')
-      .then((res) => res.json())
+    scannerService.getStatus()
       .then((data) => {
-        if (data.success) setScannerStatus(data);
+        if (data?.success) setScannerStatus(data);
       })
-      .catch((err) => console.warn('Scanner status notice:', err));
+      .catch((err) => console.warn('Scanner status notice:', err.message || err));
 
-    fetch('/api/scanner/popular-foods')
-      .then((res) => res.json())
+    scannerService.getPopularFoods()
       .then((data) => {
-        if (data.success && data.data) setPopularFoods(data.data);
+        if (data?.success && data.data) setPopularFoods(data.data);
       })
-      .catch((err) => console.warn('Popular foods notice:', err));
+      .catch((err) => console.warn('Popular foods notice:', err.message || err));
 
-    fetch('/api/foods?limit=100')
-      .then((res) => res.json())
+    foodService.getFoods({ limit: 100 })
       .then((data) => {
-        if (data.success && data.data) setAllFoodsList(data.data);
+        if (data?.success && data.data) setAllFoodsList(data.data);
       })
-      .catch((err) => console.warn('Foods catalog notice:', err));
+      .catch((err) => console.warn('Foods catalog notice:', err.message || err));
   }, []);
 
   // Filter whole foods by search query
@@ -563,11 +562,11 @@ const LabelLens = () => {
         setIndicators(calculateNutritionIndicators(finalValues));
         setGradeInfo(calculateEducationalGrade(finalValues));
       } 
-      // --- WORKFLOW 2: WHOLE OR PREPARED FOOD PHOTOGRAPH (NO FACTS LABEL) ---
+      // --- WORKFLOW 2: MULTIMODAL VISION AI NUTRITION LABEL EXTRACTION ---
       else {
         if (activeScanIdRef.current !== currentScanId) return;
 
-        setOcrStep('Inspecting food imagery with Vision service...');
+        setOcrStep('Inspecting food label with Multimodal Vision AI...');
         setOcrProgress(88);
 
         // Ensure real image file payload (use passed file or convert dataUrl)
@@ -576,7 +575,7 @@ const LabelLens = () => {
           try {
             const fetchRes = await fetch(activeUrl);
             const blob = await fetchRes.blob();
-            uploadFile = new File([blob], 'captured_food.jpg', { type: blob.type || 'image/jpeg' });
+            uploadFile = new File([blob], 'captured_label.jpg', { type: blob.type || 'image/jpeg' });
           } catch (blobErr) {
             console.warn('Could not convert dataUrl to File:', blobErr);
           }
@@ -585,98 +584,54 @@ const LabelLens = () => {
         const formData = new FormData();
         if (uploadFile) {
           formData.append('image', uploadFile);
-          formData.append('filename', uploadFile.name || 'food.jpg');
+          formData.append('filename', uploadFile.name || 'label.jpg');
         }
 
         try {
-          const res = await fetch('/api/scanner/identify', {
-            method: 'POST',
-            body: formData,
-            signal: abortController.signal,
-          });
+          const labelRes = await scannerService.analyzeLabel(formData);
 
           if (activeScanIdRef.current !== currentScanId) return;
 
-          const idData = await res.json();
-          if (activeScanIdRef.current !== currentScanId) return;
+          // Case 1: Vision AI successfully extracted printed label nutrition facts!
+          if (labelRes.success && labelRes.isNutritionLabel && labelRes.extracted) {
+            setFoodOnlyDetected(false);
+            setFoodOnlyNotice(null);
+            setIdentifiedFood(null);
 
-          // Case 1: AI successfully identified a food (Verified DB item OR Universal Food)
-          if (idData.success && idData.matched) {
-            const conf = idData.confidenceLevel === 'high' ? 'High' : (idData.confidenceLevel === 'moderate' ? 'Moderate' : 'Estimated');
-            populateFromReferenceFood(idData.matched, conf, idData.source || 'vision_ai');
-          }
-          // Case 2: Image does not contain food
-          else if (idData.isFood === false || idData.source === 'non_food') {
-            setFoodOnlyDetected(true);
-            setFoodOnlyNotice({
-              en: `No food or nutrition label detected in this photo (${idData.visualObservations || 'image does not show food'}). Please upload or capture a photo of a food item or nutrition facts panel.`,
-              te: 'ఈ ఫోటోలో ఆహారం లేదా పోషకాహార లేబుల్ కనుగొనబడలేదు. దయచేసి ఆహార పదార్థం లేదా లేబుల్ ఫోటోను అప్‌లోడ్ చేయండి.'
-            });
-            if (idData.popularWholeFoods) {
-              setPopularFoods(idData.popularWholeFoods);
+            const finalValues = {
+              ...labelRes.extracted,
+              servingBasis: labelRes.extracted.servingBasis || 'per_serving',
+            };
+            if (finalValues.sodium === null && finalValues.salt !== null) {
+              finalValues.sodium = Math.round(finalValues.salt * 400);
             }
+            setNutritionValues(finalValues);
+            setIndicators(labelRes.indicators || calculateNutritionIndicators(finalValues));
+            setGradeInfo(labelRes.gradeInfo || calculateEducationalGrade(finalValues));
+            setupReviewFromParsed(finalValues, labelRes.rawText || recognizedText, 'image', labelRes.confidence || 'high');
+          }
+          // Case 2: Vision AI analyzed the image and found it shows a fresh whole food without a printed label
+          else if (labelRes.success && labelRes.isNutritionLabel === false) {
+            setFoodOnlyDetected(true);
+            setFoodOnlyNotice(labelRes.foodOnlyNotice || {
+              en: 'No printed nutrition label detected in this photo. Whole fresh foods (e.g. apple, banana) do not carry printed packaging labels. For whole foods, use Food Scanner.',
+              te: 'ఈ ఫోటోలో ముద్రించిన పోషకాహార లేబుల్ కనుగొనబడలేదు. తాజా ఆహార పదార్థాలను విశ్లేషించడానికి ఫుడ్ స్కానర్ ఉపయోగించండి.',
+            });
             setupReviewFromParsed(getEmptyNutritionValues(), recognizedText, 'manual', 'none');
           }
-          // Case 3: Vision AI is unconfigured in server/.env
-          else if (idData.source === 'unconfigured' || idData.visionAiAvailable === false) {
-            setFoodOnlyDetected(true);
-            setFoodOnlyNotice({
-              en: 'Educational Rules-Based Mode Active: AI photo analysis is unconfigured because GEMINI_API_KEY is not set in server/.env. Please select or search from NutriVita reference foods below:',
-              te: 'ఎడ్యుకేషనల్ రూల్స్-బేస్డ్ మోడ్ యాక్టివ్‌గా ఉంది: GEMINI_API_KEY కాన్ఫిగర్ కానందున AI ఫోటో విశ్లేషణ అందుబాటులో లేదు. క్రింద ఉన్న ఆహారాన్ని ఎంచుకోండి లేదా శోధించండి:'
-            });
-            if (idData.popularWholeFoods) {
-              setPopularFoods(idData.popularWholeFoods);
-            }
-            setupReviewFromParsed(getEmptyNutritionValues(), recognizedText, 'manual', 'none');
-          }
-          // Case 4: AI recognized the food name but it is uncertain
-          else if (idData.source === 'uncertain') {
-            setFoodOnlyDetected(true);
-            setFoodOnlyNotice({
-              en: idData.recognizedName 
-                ? `Possible match: "${idData.recognizedName}" (Uncertain). Visual characteristics were not completely distinct. Please confirm or select from verified foods below:`
-                : 'Could not identify this food with certainty. Please upload a clearer photo or pick a food below:',
-              te: 'ఈ ఆహారాన్ని ఖచ్చితంగా గుర్తించలేకపోయాము. దయచేసి స్పష్టమైన ఫోటోను అప్‌లోడ్ చేయండి లేదా క్రింద ఉన్న ఆహారాన్ని ఎంచుకోండి:'
-            });
-            if (idData.popularWholeFoods) {
-              setPopularFoods(idData.popularWholeFoods);
-            }
-            setupReviewFromParsed(getEmptyNutritionValues(), recognizedText, 'manual', 'none');
-          }
-          // Case 5: Vision processing error
-          else if (idData.source === 'vision_error') {
-            setFoodOnlyDetected(true);
-            setFoodOnlyNotice({
-              en: `Vision service notice: ${idData.error || idData.message || 'Could not analyze image'}. Please select from verified foods below:`,
-              te: 'AI విశ్లేషణలో లోపం ఏర్పడింది. దయచేసి క్రింద ఉన్న ఆహారాలలో ఒకదానిని ఎంచుకోండి:'
-            });
-            if (idData.popularWholeFoods) {
-              setPopularFoods(idData.popularWholeFoods);
-            }
-            setupReviewFromParsed(getEmptyNutritionValues(), recognizedText, 'manual', 'none');
-          }
-          // Case 6: Fallback for unlabelled item
+          // Case 3: Vision AI unconfigured or processing error
           else {
-            setFoodOnlyDetected(true);
-            setFoodOnlyNotice({
-              en: 'No printed nutrition label detected. Whole fresh foods (e.g. apple, mango, coconut, sambar) do not carry printed packaging labels. Click any verified food below or search NutriVita database to view clinical reference nutrition:',
-              te: 'ముద్రించిన పోషకాహార లేబుల్ కనుగొనబడలేదు. తాజా పండ్లు లేదా కూరగాయలకు ప్యాకేజింగ్ లేబుల్స్ ఉండవు. క్రింద ఉన్న ఆహారాన్ని ఎంచుకోండి లేదా శోధించండి:'
-            });
-            if (idData.popularWholeFoods) {
-              setPopularFoods(idData.popularWholeFoods);
-            }
+            const errorMsg = labelRes.message || labelRes.error || 'Vision AI service could not analyze this image.';
+            setOcrError(errorMsg);
             setupReviewFromParsed(getEmptyNutritionValues(), recognizedText, 'manual', 'none');
           }
         } catch (identErr) {
           if (identErr.name === 'AbortError') return;
-          console.warn('Food identification lookup error:', identErr);
+          console.warn('Label vision analysis lookup error:', identErr);
           if (activeScanIdRef.current !== currentScanId) return;
 
-          setFoodOnlyDetected(true);
-          setFoodOnlyNotice({
-            en: 'Vision service unavailable. Please select from verified foods below to load reference nutrition values:',
-            te: 'విజన్ సర్వీస్ అందుబాటులో లేదు. పోషకాలను తనిఖీ చేయడానికి క్రింద ఉన్న ఆహారాన్ని ఎంచుకోండి:'
-          });
+          const errMsg = identErr.response?.data?.message || identErr.message || 'Vision service unavailable for label analysis. You can enter values manually.';
+          setOcrError(errMsg);
           setupReviewFromParsed(getEmptyNutritionValues(), recognizedText, 'manual', 'none');
         }
       }

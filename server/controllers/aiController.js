@@ -449,21 +449,36 @@ CRITICAL MANDATES:
       { role: 'user', parts: [{ text: userMessage }] }
     ];
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents }),
-    });
+    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash'];
+    let candidateText = null;
 
-    if (!response.ok) {
-      console.warn(`[Gemini API] Call failed with status ${response.status}. Falling back to deterministic engine.`);
-      return null;
+    for (const model of modelsToTry) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents }),
+        });
+
+        if (response.status === 404) continue;
+        if (!response.ok) {
+          console.warn(`[Gemini API ${model}] Call failed with status ${response.status}.`);
+          continue;
+        }
+
+        const data = await response.json();
+        candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (candidateText) break;
+      } catch (err) {
+        console.warn(`[Gemini API ${model}] notice:`, err.message);
+      }
     }
 
-    const data = await response.json();
-    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!candidateText) return null;
+    if (!candidateText) {
+      console.warn(`[Gemini API] All model attempts exhausted. Falling back to deterministic engine.`);
+      return null;
+    }
 
     return {
       success: true,

@@ -1,5 +1,10 @@
 import { memoryStore } from '../config/db.js';
 import { VisionAIService } from '../services/visionAIService.js';
+import {
+  calculateNutritionIndicators,
+  calculateEducationalGrade,
+  getEmptyNutritionValues
+} from '../utils/nutritionLabelParser.js';
 
 // Popular curated whole foods list for quick-selection chips
 const POPULAR_WHOLE_FOOD_IDS = [
@@ -674,4 +679,131 @@ export const getPopularWholeFoods = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Analyze nutrition facts label image directly using Multimodal Vision AI
+// @route   POST /api/scanner/analyze-label
+// @access  Public
+export const analyzeLabel = async (req, res, next) => {
+  try {
+    const file = req.file;
+    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file uploaded. Please provide an image of the nutrition label.',
+      });
+    }
+
+    const health = await VisionAIService.checkVisionHealth();
+    if (!health.configured || !health.reachable) {
+      return res.status(200).json({
+        success: false,
+        visionAiAvailable: false,
+        source: 'unconfigured',
+        error: health.message,
+        message: health.message || 'Vision AI service is currently unavailable. You can enter label values manually.',
+      });
+    }
+
+    let aiResult = null;
+    try {
+      aiResult = await VisionAIService.analyzeNutritionLabelWithGemini({
+        geminiKey,
+        imageBuffer: file.buffer,
+        mimeType: file.mimetype || 'image/jpeg',
+      });
+    } catch (aiErr) {
+      console.warn('Gemini label analysis notice:', aiErr.message);
+      return res.status(200).json({
+        success: false,
+        visionAiAvailable: false,
+        source: 'vision_error',
+        error: aiErr.message,
+        message: 'Vision AI could not read this label clearly. Please enter values manually or try another photo.',
+      });
+    }
+
+    if (!aiResult) {
+      return res.status(200).json({
+        success: false,
+        visionAiAvailable: true,
+        source: 'empty_result',
+        message: 'Could not extract nutrition facts from this image. Please enter values manually.',
+      });
+    }
+
+    // Check if the image does not show a nutrition facts label
+    if (aiResult.isNutritionLabel === false) {
+      return res.status(200).json({
+        success: true,
+        visionAiAvailable: true,
+        isNutritionLabel: false,
+        source: 'no_label_detected',
+        foodOnlyNotice: {
+          en: 'No printed nutrition label detected in this photo. For whole foods or meals, use Food Scanner.',
+          te: 'ఈ ఫోటోలో ముద్రించిన పోషకాహార లేబుల్ కనుగొనబడలేదు. ఆహారాన్ని విశ్లేషించడానికి ఫుడ్ స్కానర్ ఉపయోగించండి.',
+        },
+        message: 'No printed nutrition facts panel was detected on this item.',
+      });
+    }
+
+    const safeNum = (v) => {
+      if (v === null || v === undefined) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const empty = getEmptyNutritionValues();
+    const extracted = {
+      ...empty,
+      productName: aiResult.productName || null,
+      brand: aiResult.brand || null,
+      servingSize: aiResult.servingSize || null,
+      servingBasis: aiResult.servingBasis === 'per_100g' ? 'per_100g' : 'per_serving',
+      calories: safeNum(aiResult.calories),
+      energyKj: safeNum(aiResult.energyKj) || (safeNum(aiResult.calories) ? Math.round(aiResult.calories * 4.184) : null),
+      totalFat: safeNum(aiResult.totalFat),
+      saturatedFat: safeNum(aiResult.saturatedFat),
+      transFat: safeNum(aiResult.transFat),
+      carbohydrates: safeNum(aiResult.carbohydrates),
+      totalSugars: safeNum(aiResult.totalSugars),
+      addedSugars: safeNum(aiResult.addedSugars),
+      fiber: safeNum(aiResult.fiber),
+      protein: safeNum(aiResult.protein),
+      sodium: safeNum(aiResult.sodium),
+      salt: safeNum(aiResult.salt) || (safeNum(aiResult.sodium) ? Number((aiResult.sodium / 400).toFixed(2)) : null),
+      calcium: safeNum(aiResult.calcium),
+      iron: safeNum(aiResult.iron),
+      vitaminC: safeNum(aiResult.vitaminC),
+      vitaminD: safeNum(aiResult.vitaminD),
+      potassium: safeNum(aiResult.potassium),
+      ingredients: aiResult.ingredients || null,
+      allergens: aiResult.allergens || null,
+    };
+
+    if (extracted.sodium === null && extracted.salt !== null) {
+      extracted.sodium = Math.round(extracted.salt * 400);
+    }
+
+    const indicators = calculateNutritionIndicators(extracted);
+    const gradeInfo = calculateEducationalGrade(extracted);
+
+    return res.status(200).json({
+      success: true,
+      visionAiAvailable: true,
+      isNutritionLabel: true,
+      confidence: aiResult.confidence || 'high',
+      extracted,
+      indicators,
+      gradeInfo,
+      rawText: aiResult.rawTextSummary || '',
+      source: 'gemini_vision_label',
+      message: 'Successfully analyzed nutrition label using Google Gemini Multimodal Vision AI.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
