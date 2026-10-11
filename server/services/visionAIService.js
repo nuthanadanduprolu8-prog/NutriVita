@@ -834,44 +834,104 @@ Respond strictly with valid JSON:
     const base64Data = imageBuffer.toString('base64');
 
     const promptText = `
-You are NutriVita's Expert Nutrition Label Analysis & Optical Recognition AI.
-Carefully inspect the provided image of a food packaging, label, or nutrition facts table.
+You are NutriVita's Expert Multimodal Food & Nutrition Optical Intelligence AI.
+Analyze the provided image with high precision.
 
-TASK:
-1. Detect whether this image contains a printed nutrition facts table, nutrition panel, or packaged food label.
-2. Extract all available nutrition numbers per serving or per 100g.
-3. If this is a fresh whole food (like an apple, orange, banana, or fresh produce) with NO printed label on the packaging, set "isNutritionLabel": false.
-4. Extract product name, brand, serving size, and serving basis ("per_serving" or "per_100g").
-5. Extract ingredients and allergen warnings if visible.
+STEP 1: IMAGE CLASSIFICATION
+Classify the image into EXACTLY ONE of these 5 categories:
+1. "WHOLE_FOOD": Raw or single-ingredient whole foods, fresh fruits, vegetables, raw grains/millets, nuts, seeds, fresh herbs, or farm produce (e.g. apple, banana, raw almonds, spinach leaves, fresh guava, coconut, raw carrot, tomato).
+2. "COOKED_MEAL": Prepared, cooked, or assembled dishes, mixed plates, curries, thalis, restaurant or home-cooked meals (e.g. Biryani, Dosa, Sambar, Dal Tadka with Rice, Salad Bowl, Pizza, Pasta, Curry, Sandwich, Roti with Sabzi).
+3. "PACKAGED_FOOD_WITH_LABEL": A commercial packaged food product, container, bottle, can, pouch, or box with a VISIBLE, READABLE printed nutrition facts table, nutritional panel, or back-of-pack label.
+4. "PACKAGED_FOOD_WITHOUT_LABEL": A commercial packaged food product or branded container where the front packaging or branding is visible, but the printed nutrition facts panel is NOT visible, facing away, or unreadable.
+5. "NON_FOOD/UNCLEAR": The image does not contain edible food or food packaging (e.g. person, pet, electronics, documents, furniture, scenery, vehicles) OR is too dark, blurry, obscured, or corrupted to identify anything clearly.
+
+STEP 2: CATEGORY-SPECIFIC DETAILS
+- If "WHOLE_FOOD":
+  * foodName: Common standard name of the whole food.
+  * alternativeNames: Array of 1-3 common aliases or regional names (e.g. ["Red Delicious", "Seb"]).
+  * teluguName: Telugu name in Telugu script if applicable (e.g. "తాజా యాపిల్").
+  * visibleIngredients: Array describing visible state (e.g. ["Whole fresh apple with peel"]).
+  * keyVitamins: Key vitamins present (e.g. ["Vitamin C", "Vitamin K"]).
+  * keyMinerals: Key minerals present (e.g. ["Potassium", "Dietary Fiber"]).
+  * nutritionalBenefits: 1-2 sentence evidence-based dietary summary.
+  * nutritionalBenefitsTe: Telugu translation if known.
+  * servingSize: "100g standard serving".
+  * servingBasis: "per_100g".
+  * Provide approximate scientific nutrition numbers per 100g for calories, protein, carbohydrates, totalFat, saturatedFat, transFat (0), totalSugars, fiber, sodium.
+
+- If "COOKED_MEAL":
+  * foodName: Common name of the cooked dish or meal (e.g. "Vegetable Biryani with Raita").
+  * alternativeNames: Common aliases (e.g. ["Veg Pulao"]).
+  * teluguName: Telugu name in Telugu script if known.
+  * visibleIngredients: Array of 2-6 visible dish components/ingredients (e.g. ["Basmati Rice", "Carrots", "Green Peas", "Fried Onions"]).
+  * servingSize: Estimated typical serving size (e.g. "1 plate (~300g)").
+  * servingBasis: "per_serving".
+  * Provide estimated culinary nutrition numbers per typical serving ONLY when reasonable.
+  * preparationNotes: Note explaining that cooked meal values are approximate culinary estimates based on standard recipes and depend on oil, portion, and cooking method.
+  * nutritionalBenefits: 1-2 sentence dietary summary.
+
+- If "PACKAGED_FOOD_WITH_LABEL":
+  * productName: Name of the packaged food product.
+  * brand: Brand or manufacturer if visible.
+  * servingSize: Printed serving size from label (e.g. "1 bar (40g)", "100g", "1 cup").
+  * servingBasis: "per_serving" or "per_100g" based on the label.
+  * Extract all printed numbers: calories, energyKj, protein, carbohydrates, totalFat, saturatedFat, transFat, totalSugars, addedSugars, fiber, sodium, salt, calcium, iron, vitaminC, vitaminD, potassium.
+  * CRITICAL: Mark missing or unreadable nutrients as null; NEVER invent or guess printed label values!
+  * ingredientsText: Printed ingredients list if visible.
+  * allergens: Printed allergen warnings if visible.
+  * rawTextSummary: Key printed text summary.
+
+- If "PACKAGED_FOOD_WITHOUT_LABEL":
+  * productName: Product name / description identifiable from front of packaging.
+  * brand: Brand name if visible.
+  * notice: "This appears to be packaged food, but the printed nutrition facts table is not visible or readable. Please turn the packaging around and photograph the printed 'Nutrition Facts' panel for exact verified values."
+  * Leave numerical nutrition fields as null (never invent packaged facts).
+
+- If "NON_FOOD/UNCLEAR":
+  * foodName: null.
+  * unclearReason: State clearly why it cannot be processed (e.g. "The image shows a laptop keyboard, not edible food.", or "The image is too blurry to identify any food item.").
+  * notice: "Please upload a clear, well-lit photo of a whole food, cooked meal, or packaged food label."
+  * Leave numerical nutrition fields as null.
 
 Respond strictly with valid JSON conforming to this schema (no markdown formatting outside JSON):
 {
-  "isNutritionLabel": true,
+  "category": "WHOLE_FOOD" | "COOKED_MEAL" | "PACKAGED_FOOD_WITH_LABEL" | "PACKAGED_FOOD_WITHOUT_LABEL" | "NON_FOOD/UNCLEAR",
   "confidence": "high" | "medium" | "low",
+  "foodName": "string or null",
   "productName": "string or null",
   "brand": "string or null",
-  "servingSize": "string or null (e.g. 1 bar (40g), 100g, 1 cup)",
+  "alternativeNames": ["string"],
+  "teluguName": "string or null",
+  "visibleIngredients": ["string"],
+  "servingSize": "string or null",
   "servingBasis": "per_serving" | "per_100g",
-  "calories": number or null,
-  "energyKj": number or null,
-  "totalFat": number or null,
-  "saturatedFat": number or null,
-  "transFat": number or null,
-  "carbohydrates": number or null,
-  "totalSugars": number or null,
-  "addedSugars": number or null,
-  "fiber": number or null,
-  "protein": number or null,
-  "sodium": number or null,
-  "salt": number or null,
-  "calcium": number or null,
-  "iron": number or null,
-  "vitaminC": number or null,
-  "vitaminD": number or null,
-  "potassium": number or null,
-  "ingredients": "string or null",
+  "calories": null,
+  "energyKj": null,
+  "totalFat": null,
+  "saturatedFat": null,
+  "transFat": null,
+  "carbohydrates": null,
+  "totalSugars": null,
+  "addedSugars": null,
+  "fiber": null,
+  "protein": null,
+  "sodium": null,
+  "salt": null,
+  "calcium": null,
+  "iron": null,
+  "vitaminC": null,
+  "vitaminD": null,
+  "potassium": null,
+  "keyVitamins": ["string"],
+  "keyMinerals": ["string"],
+  "nutritionalBenefits": "string or null",
+  "nutritionalBenefitsTe": "string or null",
+  "preparationNotes": "string or null",
+  "ingredientsText": "string or null",
   "allergens": "string or null",
-  "rawTextSummary": "Key visible printed label text"
+  "unclearReason": "string or null",
+  "notice": "string or null",
+  "rawTextSummary": "string or null"
 }
 `;
 
@@ -941,7 +1001,33 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
 
         const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
         const parsed = JSON.parse(cleanJson);
-        console.log(`[VisionAIService] Nutrition label analysis successful via model "${model}": isNutritionLabel=${parsed.isNutritionLabel}, product="${parsed.productName || 'unnamed'}"`);
+
+        // Normalize category
+        let category = (parsed.category || '').toUpperCase().trim();
+        const validCategories = [
+          'WHOLE_FOOD',
+          'COOKED_MEAL',
+          'PACKAGED_FOOD_WITH_LABEL',
+          'PACKAGED_FOOD_WITHOUT_LABEL',
+          'NON_FOOD/UNCLEAR',
+        ];
+        if (!validCategories.includes(category)) {
+          if (parsed.isNutritionLabel === true) {
+            category = 'PACKAGED_FOOD_WITH_LABEL';
+          } else if (parsed.isNutritionLabel === false) {
+            category = 'WHOLE_FOOD';
+          } else {
+            category = 'PACKAGED_FOOD_WITH_LABEL';
+          }
+        }
+        parsed.category = category;
+        parsed.isNutritionLabel = category === 'PACKAGED_FOOD_WITH_LABEL';
+        parsed.alternativeNames = Array.isArray(parsed.alternativeNames) ? parsed.alternativeNames : [];
+        parsed.visibleIngredients = Array.isArray(parsed.visibleIngredients) ? parsed.visibleIngredients : [];
+        parsed.keyVitamins = Array.isArray(parsed.keyVitamins) ? parsed.keyVitamins : [];
+        parsed.keyMinerals = Array.isArray(parsed.keyMinerals) ? parsed.keyMinerals : [];
+
+        console.log(`[VisionAIService] Label intelligence analysis successful via model "${model}": category=${parsed.category}, product="${parsed.productName || parsed.foodName || 'unnamed'}"`);
         return parsed;
       } catch (err) {
         lastError = err;

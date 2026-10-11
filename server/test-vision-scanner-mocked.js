@@ -252,13 +252,14 @@ async function runMockedTests() {
   }
 
   // -------------------------------------------------------------------------
-  // GROUP 2: LABEL LENS (POST /api/scanner/analyze-label)
+  // GROUP 2: LABEL LENS 5-CATEGORY CLASSIFICATION & ERROR HANDLING (POST /api/scanner/analyze-label)
   // -------------------------------------------------------------------------
-  console.log('\n📋 Test Group 2: Label Lens (POST /api/scanner/analyze-label)');
+  console.log('\n📋 Test Group 2: Label Lens 5-Category Classification & Error Handling (POST /api/scanner/analyze-label)');
 
-  // Test 2a: Successful label facts extraction with clinical grading
+  // Test 2a: PACKAGED_FOOD_WITH_LABEL - Extracted facts with indicators and educational grade
   try {
     VisionAIService.analyzeNutritionLabelWithGemini = async () => ({
+      category: 'PACKAGED_FOOD_WITH_LABEL',
       isNutritionLabel: true,
       confidence: 'high',
       productName: 'Roasted Almond Crunch',
@@ -273,6 +274,8 @@ async function runMockedTests() {
       fiber: 4.5,
       protein: 7.0,
       sodium: 85,
+      ingredientsText: 'Roasted almonds, sea salt, rosemary extract',
+      allergens: 'Contains tree nuts (almonds)',
       rawTextSummary: 'Energy 190 kcal, Protein 7g, Fiber 4.5g, Sugars 3g',
     });
 
@@ -282,35 +285,159 @@ async function runMockedTests() {
     });
     const json = await res.json();
 
-    assert(res.status === 200 && json.success, '2a. Label analysis endpoint succeeds with HTTP 200');
-    assert(json.isNutritionLabel === true, '2b. Accurately sets isNutritionLabel: true');
-    assert(json.extracted && json.extracted.calories === 190, '2c. Extracts exact caloric value (190 kcal)');
-    assert(Array.isArray(json.indicators) && json.indicators.some(i => i.id === 'good-protein'), '2e. Identifies good protein indicator');
+    assert(res.status === 200 && json.success, '2a. PACKAGED_FOOD_WITH_LABEL endpoint succeeds with HTTP 200');
+    assert(json.category === 'PACKAGED_FOOD_WITH_LABEL', '2b. Correctly sets category: PACKAGED_FOOD_WITH_LABEL');
+    assert(json.isNutritionLabel === true, '2c. Accurately sets isNutritionLabel: true for packaged label');
+    assert(json.extracted && json.extracted.calories === 190, '2d. Extracts exact caloric value (190 kcal)');
+    assert(json.extracted.sodium === 85, '2e. Extracts sodium (85mg)');
+    assert(json.extracted.protein === 7, '2f. Extracts protein (7g)');
+    assert(Array.isArray(json.indicators) && json.indicators.some(i => i.id === 'good-protein'), '2g. Identifies good protein indicator');
+    assert(json.gradeInfo && json.gradeInfo.grade, '2h. Computes educational grade (A-E)');
   } catch (err) {
     assert(false, 'Group 2a failed', err.message);
   }
 
-  // Test 2b: Whole food without printed label
+  // Test 2b: WHOLE_FOOD - Fresh produce (e.g. Apple / Guava)
   try {
     VisionAIService.analyzeNutritionLabelWithGemini = async () => ({
+      category: 'WHOLE_FOOD',
       isNutritionLabel: false,
-      productName: 'Fresh Guava',
+      confidence: 'high',
+      foodName: 'Fresh Apple',
+      alternativeNames: ['Red Delicious', 'Seb'],
+      teluguName: 'తాజా యాపిల్',
+      visibleIngredients: ['Whole fresh apple with red skin'],
+      servingSize: '100g standard serving',
+      servingBasis: 'per_100g',
+      calories: 52,
+      protein: 0.3,
+      carbohydrates: 14.0,
+      totalFat: 0.2,
+      saturatedFat: 0,
+      fiber: 2.4,
+      totalSugars: 10.4,
+      sodium: 1,
+      keyVitamins: ['Vitamin C', 'Vitamin K'],
+      keyMinerals: ['Potassium', 'Boron'],
+      nutritionalBenefits: 'Rich in soluble pectin fiber and dietary antioxidants supporting gut and cardiovascular wellness.',
+      nutritionalBenefitsTe: 'యాపిల్ జీర్ణక్రియకు మరియు గుండె ఆరోగ్యానికి మంచిది.',
     });
 
     const res = await fetch(`${BASE_URL}/scanner/analyze-label`, {
       method: 'POST',
-      body: createMockFormData('guava.jpg'),
+      body: createMockFormData('apple.jpg'),
     });
     const json = await res.json();
 
-    assert(res.status === 200 && json.success, '2f. Non-label whole food responds with HTTP 200');
-    assert(json.isNutritionLabel === false, '2g. Correctly sets isNutritionLabel: false');
-    assert(json.foodOnlyNotice && json.foodOnlyNotice.en.includes('Food Scanner'), '2h. Advises user to use Food Scanner for fresh produce');
+    assert(res.status === 200 && json.success, '2i. WHOLE_FOOD responds with HTTP 200 and success: true');
+    assert(json.category === 'WHOLE_FOOD', '2j. Correctly sets category: WHOLE_FOOD');
+    assert(json.isNutritionLabel === false, '2k. Correctly sets isNutritionLabel: false');
+    assert(json.foodName === 'Fresh Apple', '2l. Identifies likely food name: Fresh Apple');
+    assert(Array.isArray(json.alternativeNames) && json.alternativeNames.includes('Seb'), '2m. Includes alternative names');
+    assert(Array.isArray(json.keyVitamins) && json.keyVitamins.includes('Vitamin C'), '2n. Returns key vitamins');
+    assert(Array.isArray(json.keyMinerals) && json.keyMinerals.includes('Potassium'), '2o. Returns key minerals');
+    assert(json.nutritionalBenefits && json.nutritionalBenefits.length > 0, '2p. Provides nutritional benefits');
+    assert(json.extracted && json.extracted.calories === 52, '2q. Provides standard nutrition per 100g');
+    assert(json.gradeInfo && json.gradeInfo.grade, '2r. Calculates educational grade for whole food');
   } catch (err) {
     assert(false, 'Group 2b failed', err.message);
   }
 
-  // Test 2c: Missing API Key for Label Lens
+  // Test 2c: COOKED_MEAL - Prepared dish (e.g. Vegetable Biryani)
+  try {
+    VisionAIService.analyzeNutritionLabelWithGemini = async () => ({
+      category: 'COOKED_MEAL',
+      isNutritionLabel: false,
+      confidence: 'high',
+      foodName: 'Vegetable Biryani',
+      alternativeNames: ['Veg Pulao', 'Hyderabadi Veg Biryani'],
+      teluguName: 'కూరగాయల బిర్యానీ',
+      visibleIngredients: ['Basmati Rice', 'Carrots', 'Green Peas', 'Fried Onions', 'Mint Leaves'],
+      servingSize: '1 plate (~300g)',
+      servingBasis: 'per_serving',
+      calories: 360,
+      protein: 7.5,
+      carbohydrates: 58.0,
+      totalFat: 11.0,
+      saturatedFat: 3.0,
+      fiber: 4.0,
+      totalSugars: 3.5,
+      sodium: 520,
+      preparationNotes: 'Nutritional values for cooked meals are approximate estimates based on standard recipes. Actual values depend on cooking oils, portion weight, and specific ingredients.',
+      nutritionalBenefits: 'Provides sustained dietary complex carbohydrates and vegetable fiber.',
+    });
+
+    const res = await fetch(`${BASE_URL}/scanner/analyze-label`, {
+      method: 'POST',
+      body: createMockFormData('biryani.jpg'),
+    });
+    const json = await res.json();
+
+    assert(res.status === 200 && json.success, '2s. COOKED_MEAL responds with HTTP 200 and success: true');
+    assert(json.category === 'COOKED_MEAL', '2t. Correctly sets category: COOKED_MEAL');
+    assert(json.foodName === 'Vegetable Biryani', '2u. Identifies likely dish name');
+    assert(Array.isArray(json.visibleIngredients) && json.visibleIngredients.includes('Basmati Rice'), '2v. Identifies visible ingredients');
+    assert(json.preparationNotes && json.preparationNotes.includes('approximate'), '2w. Includes clear disclaimer on recipe and portion variance');
+    assert(json.extracted && json.extracted.calories === 360, '2x. Provides estimated nutrition per serving');
+  } catch (err) {
+    assert(false, 'Group 2c failed', err.message);
+  }
+
+  // Test 2d: PACKAGED_FOOD_WITHOUT_LABEL - Branded packaged food without visible nutrition panel
+  try {
+    VisionAIService.analyzeNutritionLabelWithGemini = async () => ({
+      category: 'PACKAGED_FOOD_WITHOUT_LABEL',
+      isNutritionLabel: false,
+      confidence: 'high',
+      productName: 'Classic Potato Chips',
+      brand: 'Lays',
+      visibleIngredients: ['Front packaging of salted potato chips pouch'],
+      notice: 'This image shows packaged food, but the printed nutrition facts panel is not facing the camera or visible. Please turn the packaging around and photograph the printed Nutrition Facts panel for exact verified values.',
+      noticeTe: 'ఈ ఫోటోలో ప్యాకేజ్డ్ ఫుడ్ కనిపిస్తుంది, కానీ ముద్రించిన పోషకాహార పట్టిక కనిపించడం లేదు. దయచేసి ప్యాకేజింగ్ వెనుక ఉన్న పోషకాహార లేబుల్‌ను ఫోటో తీయండి.',
+    });
+
+    const res = await fetch(`${BASE_URL}/scanner/analyze-label`, {
+      method: 'POST',
+      body: createMockFormData('chips_front.jpg'),
+    });
+    const json = await res.json();
+
+    assert(res.status === 200 && json.success, '2y. PACKAGED_FOOD_WITHOUT_LABEL responds with HTTP 200 and success: true');
+    assert(json.category === 'PACKAGED_FOOD_WITHOUT_LABEL', '2z. Correctly sets category: PACKAGED_FOOD_WITHOUT_LABEL');
+    assert(json.productName === 'Classic Potato Chips', '2aa. Identifies product name from packaging front');
+    assert(json.brand === 'Lays', '2ab. Identifies brand from packaging front');
+    assert(json.notice && json.notice.includes('printed Nutrition Facts panel'), '2ac. Explains exact values require readable label panel');
+    assert(json.extracted === undefined, '2ad. Does NOT invent numerical nutrition numbers without visible label');
+  } catch (err) {
+    assert(false, 'Group 2d failed', err.message);
+  }
+
+  // Test 2e: NON_FOOD/UNCLEAR - Non-food object or blurry photo
+  try {
+    VisionAIService.analyzeNutritionLabelWithGemini = async () => ({
+      category: 'NON_FOOD/UNCLEAR',
+      isNutritionLabel: false,
+      confidence: 'uncertain',
+      unclearReason: 'The image depicts an office desk with a computer monitor, mouse, and coffee mug, not edible food or food packaging.',
+      notice: 'Please upload a clear, well-lit photo of a whole food (fruit, vegetable), cooked meal, or packaged food label.',
+    });
+
+    const res = await fetch(`${BASE_URL}/scanner/analyze-label`, {
+      method: 'POST',
+      body: createMockFormData('desk.jpg'),
+    });
+    const json = await res.json();
+
+    assert(res.status === 200 && json.success, '2ae. NON_FOOD/UNCLEAR responds with HTTP 200');
+    assert(json.category === 'NON_FOOD/UNCLEAR', '2af. Correctly sets category: NON_FOOD/UNCLEAR');
+    assert(json.unclearReason && json.unclearReason.includes('not edible food'), '2ag. Explains why image was rejected');
+    assert(json.notice && json.notice.includes('clear, well-lit photo'), '2ah. Guides user to upload clear food image');
+    assert(json.extracted === undefined, '2ai. No extracted nutrition for non-food image');
+  } catch (err) {
+    assert(false, 'Group 2e failed', err.message);
+  }
+
+  // Test 2f: Missing API Key for Label Lens (Unconfigured)
   try {
     VisionAIService.getApiKeyInfo = () => ({
       key: null,
@@ -325,10 +452,10 @@ async function runMockedTests() {
     });
     const json = await res.json();
 
-    assert(res.status === 200 && json.success === false, '2i. Missing key returns HTTP 200 with success: false');
-    assert(json.source === 'unconfigured', '2j. Reports source: "unconfigured"');
+    assert(res.status === 200 && json.success === false, '2aj. Missing key returns HTTP 200 with success: false');
+    assert(json.source === 'unconfigured', '2ak. Reports source: "unconfigured"');
   } catch (err) {
-    assert(false, 'Group 2c failed', err.message);
+    assert(false, 'Group 2f failed', err.message);
   }
 
   // Restore key for error tests
@@ -339,7 +466,7 @@ async function runMockedTests() {
     length: 25,
   });
 
-  // Test 2d: Label Lens Gemini Error (HTTP 500)
+  // Test 2g: Label Lens Gemini Error (HTTP 500)
   try {
     VisionAIService.analyzeNutritionLabelWithGemini = async () => {
       throw new Error('Gemini internal model processing failure');
@@ -351,14 +478,14 @@ async function runMockedTests() {
     });
     const json = await res.json();
 
-    assert(res.status === 200 && json.success === false, '2k. Processing error returns HTTP 200 with success: false');
-    assert(json.source === 'vision_error', '2l. Reports source: "vision_error"');
-    assert(json.source !== 'unconfigured', '2m. Does NOT falsely report "unconfigured" on provider error');
+    assert(res.status === 200 && json.success === false, '2al. Processing error returns HTTP 200 with success: false');
+    assert(json.source === 'vision_error', '2am. Reports source: "vision_error"');
+    assert(json.source !== 'unconfigured', '2an. Does NOT falsely report "unconfigured" on provider error');
   } catch (err) {
-    assert(false, 'Group 2d failed', err.message);
+    assert(false, 'Group 2g failed', err.message);
   }
 
-  // Test 2e: Label Lens Quota Exceeded (HTTP 429)
+  // Test 2h: Label Lens Quota Exceeded (HTTP 429)
   try {
     VisionAIService.analyzeNutritionLabelWithGemini = async () => {
       const quotaErr = new Error('Gemini HTTP 429: RESOURCE_EXHAUSTED');
@@ -372,10 +499,10 @@ async function runMockedTests() {
     });
     const json = await res.json();
 
-    assert(json.source === 'quota_exceeded', '2n. Correctly classifies quota exhaustion as "quota_exceeded"');
-    assert(json.source !== 'unconfigured', '2o. Does NOT falsely report "unconfigured" when quota exceeded');
+    assert(json.source === 'quota_exceeded', '2ao. Correctly classifies quota exhaustion as "quota_exceeded"');
+    assert(json.source !== 'unconfigured', '2ap. Does NOT falsely report "unconfigured" when quota exceeded');
   } catch (err) {
-    assert(false, 'Group 2e failed', err.message);
+    assert(false, 'Group 2h failed', err.message);
   }
 
   // -------------------------------------------------------------------------

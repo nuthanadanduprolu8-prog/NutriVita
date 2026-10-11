@@ -743,23 +743,22 @@ export const analyzeLabel = async (req, res, next) => {
         success: false,
         visionAiAvailable: true,
         source: 'empty_result',
-        message: 'Could not extract nutrition facts from this image. Please enter values manually.',
+        message: 'Could not analyze this image. Please try another photo or enter values manually.',
       });
     }
 
-    // Check if the image does not show a nutrition facts label
-    if (aiResult.isNutritionLabel === false) {
-      return res.status(200).json({
-        success: true,
-        visionAiAvailable: true,
-        isNutritionLabel: false,
-        source: 'no_label_detected',
-        foodOnlyNotice: {
-          en: 'No printed nutrition label detected in this photo. For whole foods or meals, use Food Scanner.',
-          te: 'ఈ ఫోటోలో ముద్రించిన పోషకాహార లేబుల్ కనుగొనబడలేదు. ఆహారాన్ని విశ్లేషించడానికి ఫుడ్ స్కానర్ ఉపయోగించండి.',
-        },
-        message: 'No printed nutrition facts panel was detected on this item.',
-      });
+    const allFoods = [...memoryStore.foods];
+
+    // Determine canonical category
+    let category = (aiResult.category || '').toUpperCase().trim();
+    if (!category) {
+      if (aiResult.isNutritionLabel === true) {
+        category = 'PACKAGED_FOOD_WITH_LABEL';
+      } else if (aiResult.isNutritionLabel === false) {
+        category = 'WHOLE_FOOD';
+      } else {
+        category = 'PACKAGED_FOOD_WITH_LABEL';
+      }
     }
 
     const safeNum = (v) => {
@@ -771,7 +770,7 @@ export const analyzeLabel = async (req, res, next) => {
     const empty = getEmptyNutritionValues();
     const extracted = {
       ...empty,
-      productName: aiResult.productName || null,
+      productName: aiResult.productName || aiResult.foodName || null,
       brand: aiResult.brand || null,
       servingSize: aiResult.servingSize || null,
       servingBasis: aiResult.servingBasis === 'per_100g' ? 'per_100g' : 'per_serving',
@@ -792,7 +791,7 @@ export const analyzeLabel = async (req, res, next) => {
       vitaminC: safeNum(aiResult.vitaminC),
       vitaminD: safeNum(aiResult.vitaminD),
       potassium: safeNum(aiResult.potassium),
-      ingredients: aiResult.ingredients || null,
+      ingredients: aiResult.ingredientsText || aiResult.ingredients || null,
       allergens: aiResult.allergens || null,
     };
 
@@ -800,20 +799,138 @@ export const analyzeLabel = async (req, res, next) => {
       extracted.sodium = Math.round(extracted.salt * 400);
     }
 
-    const indicators = calculateNutritionIndicators(extracted);
-    const gradeInfo = calculateEducationalGrade(extracted);
+    const hasNutritionNumbers = Boolean(
+      extracted.calories !== null ||
+      extracted.protein !== null ||
+      extracted.carbohydrates !== null ||
+      extracted.totalFat !== null
+    );
 
+    const indicators = hasNutritionNumbers ? calculateNutritionIndicators(extracted) : [];
+    const gradeInfo = hasNutritionNumbers ? calculateEducationalGrade(extracted) : null;
+
+    // 1. NON_FOOD / UNCLEAR
+    if (category === 'NON_FOOD/UNCLEAR' || category === 'NON_FOOD' || category === 'UNCLEAR') {
+      return res.status(200).json({
+        success: true,
+        visionAiAvailable: true,
+        category: 'NON_FOOD/UNCLEAR',
+        isNutritionLabel: false,
+        unclearReason: aiResult.unclearReason || 'The image does not contain recognizable food, ingredients, or food packaging.',
+        notice: aiResult.notice || 'Please upload a clear, well-lit photo of a whole food (fruit, vegetable), cooked meal, or packaged food label.',
+        noticeTe: 'దయచేసి తాజా పండ్లు, కూరగాయలు, వండిన ఆహారం లేదా ప్యాకేజ్డ్ ఫుడ్ లేబుల్ యొక్క స్పష్టమైన ఫోటోను అప్‌లోడ్ చేయండి.',
+        source: 'gemini_vision_unclear',
+        message: aiResult.unclearReason || 'Could not detect food in this image. Please upload a clear photo of food or a nutrition label.',
+      });
+    }
+
+    // 2. PACKAGED_FOOD_WITHOUT_LABEL
+    if (category === 'PACKAGED_FOOD_WITHOUT_LABEL') {
+      return res.status(200).json({
+        success: true,
+        visionAiAvailable: true,
+        category: 'PACKAGED_FOOD_WITHOUT_LABEL',
+        isNutritionLabel: false,
+        productName: aiResult.productName || aiResult.foodName || 'Packaged Food Product',
+        brand: aiResult.brand || null,
+        visibleIngredients: aiResult.visibleIngredients || [],
+        notice: aiResult.notice || 'This image shows packaged food, but the printed nutrition facts panel is not facing the camera or visible. Please turn the packaging around and photograph the printed Nutrition Facts panel for exact verified values.',
+        noticeTe: 'ఈ ఫోటోలో ప్యాకేజ్డ్ ఫుడ్ కనిపిస్తుంది, కానీ ముద్రించిన పోషకాహార పట్టిక కనిపించడం లేదు. దయచేసి ప్యాకేజింగ్ వెనుక ఉన్న పోషకాహార లేబుల్‌ను ఫోటో తీయండి.',
+        source: 'gemini_vision_packaged_unlabeled',
+        message: 'Packaged food detected, but printed nutrition label is not visible. Please photograph the printed label for exact numbers.',
+      });
+    }
+
+    // 3. WHOLE_FOOD
+    if (category === 'WHOLE_FOOD') {
+      const foodName = aiResult.foodName || aiResult.productName || 'Whole Food';
+      const matchedDbFood = matchAiNameToDatabase(foodName, allFoods);
+
+      // If matched with DB and values were missing, fill from verified clinical DB
+      if (matchedDbFood && !hasNutritionNumbers) {
+        extracted.calories = safeNum(matchedDbFood.calories);
+        extracted.protein = safeNum(matchedDbFood.macronutrients?.protein);
+        extracted.carbohydrates = safeNum(matchedDbFood.macronutrients?.carbs);
+        extracted.totalFat = safeNum(matchedDbFood.macronutrients?.fats);
+        extracted.fiber = safeNum(matchedDbFood.macronutrients?.fiber);
+        extracted.totalSugars = safeNum(matchedDbFood.macronutrients?.sugars);
+        extracted.sodium = safeNum(matchedDbFood.minerals?.sodium);
+        extracted.servingBasis = 'per_100g';
+      }
+
+      const wholeFoodIndicators = calculateNutritionIndicators(extracted);
+      const wholeFoodGrade = calculateEducationalGrade(extracted);
+
+      return res.status(200).json({
+        success: true,
+        visionAiAvailable: true,
+        category: 'WHOLE_FOOD',
+        isNutritionLabel: false,
+        foodName,
+        productName: foodName,
+        alternativeNames: aiResult.alternativeNames || [],
+        teluguName: aiResult.teluguName || (matchedDbFood ? matchedDbFood.teluguName : null),
+        visibleIngredients: aiResult.visibleIngredients?.length > 0 ? aiResult.visibleIngredients : [`Raw whole ${foodName}`],
+        servingSize: aiResult.servingSize || '100g standard serving',
+        servingBasis: 'per_100g',
+        extracted,
+        indicators: wholeFoodIndicators,
+        gradeInfo: wholeFoodGrade,
+        keyVitamins: aiResult.keyVitamins?.length > 0 ? aiResult.keyVitamins : (matchedDbFood?.vitamins ? [matchedDbFood.vitamins] : ['Vitamin C', 'Dietary Fiber']),
+        keyMinerals: aiResult.keyMinerals?.length > 0 ? aiResult.keyMinerals : (matchedDbFood?.minerals ? Object.keys(matchedDbFood.minerals).filter(k => matchedDbFood.minerals[k]) : ['Potassium']),
+        nutritionalBenefits: aiResult.nutritionalBenefits || (matchedDbFood ? matchedDbFood.benefitsEn : 'Natural whole food rich in dietary micronutrients and clean nourishment.'),
+        nutritionalBenefitsTe: aiResult.nutritionalBenefitsTe || (matchedDbFood ? matchedDbFood.benefitsTe : null),
+        matchedFood: matchedDbFood || null,
+        source: 'gemini_vision_whole_food',
+        message: `Identified as "${foodName}" (Whole Food). Loaded nutritional characteristics per 100g.`,
+      });
+    }
+
+    // 4. COOKED_MEAL
+    if (category === 'COOKED_MEAL') {
+      const foodName = aiResult.foodName || aiResult.productName || 'Cooked Dish';
+      return res.status(200).json({
+        success: true,
+        visionAiAvailable: true,
+        category: 'COOKED_MEAL',
+        isNutritionLabel: false,
+        foodName,
+        productName: foodName,
+        alternativeNames: aiResult.alternativeNames || [],
+        teluguName: aiResult.teluguName || null,
+        visibleIngredients: aiResult.visibleIngredients || [],
+        servingSize: aiResult.servingSize || '1 typical serving (~250-300g)',
+        servingBasis: 'per_serving',
+        extracted: hasNutritionNumbers ? extracted : null,
+        indicators,
+        gradeInfo,
+        preparationNotes: aiResult.preparationNotes || 'Nutritional values for cooked meals are approximate estimates based on standard recipes. Exact values depend on cooking oils, portion weight, and specific ingredients.',
+        nutritionalBenefits: aiResult.nutritionalBenefits || 'Provides dietary sustenance and macronutrients.',
+        nutritionalBenefitsTe: aiResult.nutritionalBenefitsTe || null,
+        source: 'gemini_vision_cooked_meal',
+        message: `Identified as "${foodName}" (Cooked Meal). Estimated nutrition provided.`,
+      });
+    }
+
+    // 5. PACKAGED_FOOD_WITH_LABEL (Default for label scans)
     return res.status(200).json({
       success: true,
       visionAiAvailable: true,
+      category: 'PACKAGED_FOOD_WITH_LABEL',
       isNutritionLabel: true,
       confidence: aiResult.confidence || 'high',
+      productName: aiResult.productName || aiResult.foodName || 'Packaged Food',
+      brand: aiResult.brand || null,
+      servingSize: aiResult.servingSize || null,
+      servingBasis: aiResult.servingBasis === 'per_100g' ? 'per_100g' : 'per_serving',
       extracted,
       indicators,
       gradeInfo,
+      ingredients: aiResult.ingredientsText || aiResult.ingredients || null,
+      allergens: aiResult.allergens || null,
       rawText: aiResult.rawTextSummary || '',
       source: 'gemini_vision_label',
-      message: 'Successfully analyzed nutrition label using Google Gemini Multimodal Vision AI.',
+      message: 'Successfully extracted printed nutrition facts label.',
     });
   } catch (error) {
     next(error);
