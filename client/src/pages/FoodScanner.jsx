@@ -127,6 +127,15 @@ const FoodScanner = () => {
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setUploadError(
+        isTelugu
+          ? 'మీరు ప్రస్తుతం ఆఫ్‌లైన్‌లో ఉన్నారు. ఆహార ఫోటో విశ్లేషణకు ఇంటర్నెట్ కనెక్షన్ అవసరం. కింద ఉన్న శోధనను ఉపయోగించవచ్చు.'
+          : 'You are currently offline. AI photo scanning requires an active internet connection. You can use the verified food search below while offline.'
+      );
+      return;
+    }
+
     setScanning(true);
     setUploadError('');
     setScanStep('Analyzing food with Google Gemini Multimodal Vision AI...');

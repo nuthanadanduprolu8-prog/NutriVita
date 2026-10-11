@@ -522,6 +522,16 @@ const LabelLens = () => {
 
       setOcrProgress(50);
 
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setIsProcessing(false);
+        setOcrError(
+          isTelugu
+            ? 'మీరు ప్రస్తుతం ఆఫ్‌లైన్‌లో ఉన్నారు. ఆన్‌లైన్ లేబుల్ విశ్లేషణకు ఇంటర్నెట్ కనెక్షన్ అవసరం. కింద మాన్యువల్‌గా వివరాలు నమోదు చేయవచ్చు.'
+            : 'You are currently offline. Online Gemini label analysis requires an internet connection. You can enter nutrition values manually or select a sample label below.'
+        );
+        return;
+      }
+
       let labelRes = null;
       let unconfigured = false;
 

@@ -227,6 +227,15 @@ const VitaMateAI = () => {
 
     setMessages((prev) => [...prev, userMessageObj]);
     setInputMessage('');
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setErrorBanner(
+        isTelugu
+          ? 'మీరు ప్రస్తుతం ఆఫ్‌లైన్‌లో ఉన్నారు. VitaMate AI సంభాషణలకు ఇంటర్నెట్ కనెక్షన్ అవసరం.'
+          : 'You are currently offline. VitaMate AI conversation requires an active internet connection.'
+      );
+      return;
+    }
+
     setErrorBanner('');
     setLoading(true);
 

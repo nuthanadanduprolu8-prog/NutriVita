@@ -3,12 +3,17 @@ import Navbar from './Navbar';
 import Footer from './Footer';
 import MobileNav from './MobileNav';
 import { DisclaimerBanner } from '../common/MedicalDisclaimer';
+import OfflineBanner from '../common/OfflineBanner';
+import PWAInstallPrompt from '../common/PWAInstallPrompt';
 
 const MainLayout = ({ children, hideFooter = false, showSidebar = false, sidebarComponent = null }) => {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased pb-16 lg:pb-0">
       {/* Top CSP Disclaimer Notice */}
       <DisclaimerBanner />
+
+      {/* Offline Connectivity Status Notice */}
+      <OfflineBanner />
       
       {/* Main Top Navigation */}
       <Navbar />
@@ -32,6 +37,9 @@ const MainLayout = ({ children, hideFooter = false, showSidebar = false, sidebar
 
       {/* Mobile Bottom Navigation Bar */}
       <MobileNav />
+
+      {/* PWA Floating Install Prompt */}
+      <PWAInstallPrompt />
     </div>
   );
 };
