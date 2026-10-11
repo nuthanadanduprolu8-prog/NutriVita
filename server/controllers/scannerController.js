@@ -237,19 +237,21 @@ export const identifyFood = async (req, res, next) => {
       });
     }
 
-    console.log(`[Scanner] POST /identify - Image upload received: size=${file.size}B, mimetype=${file.mimetype}`);
+    const keyInfo = VisionAIService.getApiKeyInfo();
+    const hasKey = Boolean(keyInfo.key);
 
-    // 2. Check Vision AI configuration & reachability
-    const health = await VisionAIService.checkVisionHealth();
-    if (!health.configured || !health.reachable) {
-      console.warn(`[Scanner] POST /identify - Vision AI not ready. Configured=${health.configured}, Reachable=${health.reachable}, Source=${health.envVarName || 'none'}`);
+    console.log(`[Scanner] POST /identify - Entry: keyPresent=${hasKey}, keySource=${keyInfo.envVarName || 'none'}, size=${file.size}B, mimetype=${file.mimetype}`);
+
+    // 2. Check Vision AI configuration
+    if (!hasKey) {
+      console.warn(`[Scanner] POST /identify - Vision AI not configured. No GEMINI_API_KEY detected in environment.`);
       return res.status(200).json({
         success: false,
         visionAiAvailable: false,
-        source: health.configured ? 'service_unreachable' : 'unconfigured',
+        source: 'unconfigured',
         matched: null,
-        error: health.error || null,
-        message: health.message,
+        error: 'Vision service unconfigured',
+        message: 'Educational Rules-Based Mode Active. AI-powered photo analysis is currently unavailable because the vision service has not been configured in Render environment variables.',
         popularWholeFoods,
         allFoodsCount: allFoods.length,
       });
@@ -259,20 +261,22 @@ export const identifyFood = async (req, res, next) => {
     let aiResult = null;
     try {
       aiResult = await VisionAIService.identifyFoodWithGemini({
-        geminiKey,
+        geminiKey: keyInfo.key,
         imageBuffer: file.buffer,
         mimeType: file.mimetype || 'image/jpeg',
       });
     } catch (aiErr) {
-      console.error('[Scanner] POST /identify - Gemini vision processing error:', aiErr.message);
+      const classified = VisionAIService.classifyVisionError(aiErr);
+      console.error(`[Scanner] POST /identify - Gemini vision processing error (${classified.source}):`, classified.message);
       return res.status(200).json({
         success: false,
         visionAiAvailable: false,
-        source: 'vision_error',
+        source: classified.source,
         matched: null,
-        error: aiErr.message,
-        message: `Vision AI service could not analyze this image (${aiErr.message}). Please select from verified foods below or try again.`,
+        error: classified.message,
+        message: classified.message,
         popularWholeFoods,
+        allFoodsCount: allFoods.length,
       });
     }
 
@@ -699,35 +703,38 @@ export const analyzeLabel = async (req, res, next) => {
       });
     }
 
-    console.log(`[Scanner] POST /analyze-label - Label upload received: size=${file.size}B, mimetype=${file.mimetype}`);
+    const keyInfo = VisionAIService.getApiKeyInfo();
+    const hasKey = Boolean(keyInfo.key);
 
-    const health = await VisionAIService.checkVisionHealth();
-    if (!health.configured || !health.reachable) {
-      console.warn(`[Scanner] POST /analyze-label - Vision AI not ready. Configured=${health.configured}, Reachable=${health.reachable}, Source=${health.envVarName || 'none'}`);
+    console.log(`[Scanner] POST /analyze-label - Entry: keyPresent=${hasKey}, keySource=${keyInfo.envVarName || 'none'}, size=${file.size}B, mimetype=${file.mimetype}`);
+
+    if (!hasKey) {
+      console.warn(`[Scanner] POST /analyze-label - Vision AI not configured. No GEMINI_API_KEY detected in environment.`);
       return res.status(200).json({
         success: false,
         visionAiAvailable: false,
-        source: health.configured ? 'service_unreachable' : 'unconfigured',
-        error: health.error || health.message,
-        message: health.message || 'Vision AI service is currently unavailable. You can enter label values manually.',
+        source: 'unconfigured',
+        error: 'Vision service unconfigured',
+        message: 'Vision AI label analysis is currently unavailable because the vision service has not been configured in Render environment variables. You can enter label values manually or test with sample food labels.',
       });
     }
 
     let aiResult = null;
     try {
       aiResult = await VisionAIService.analyzeNutritionLabelWithGemini({
-        geminiKey,
+        geminiKey: keyInfo.key,
         imageBuffer: file.buffer,
         mimeType: file.mimetype || 'image/jpeg',
       });
     } catch (aiErr) {
-      console.error('[Scanner] POST /analyze-label - Gemini label analysis error:', aiErr.message);
+      const classified = VisionAIService.classifyVisionError(aiErr);
+      console.error(`[Scanner] POST /analyze-label - Gemini label analysis error (${classified.source}):`, classified.message);
       return res.status(200).json({
         success: false,
         visionAiAvailable: false,
-        source: 'vision_error',
-        error: aiErr.message,
-        message: `Vision AI could not read this label clearly (${aiErr.message}). Please enter values manually or try another photo.`,
+        source: classified.source,
+        error: classified.message,
+        message: classified.message,
       });
     }
 

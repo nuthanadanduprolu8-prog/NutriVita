@@ -53,6 +53,79 @@ export class VisionAIService {
   }
 
   /**
+   * Sanitizes any sensitive tokens, API keys, or database secrets from error strings.
+   * Ensures no API secrets or keys are ever logged or sent to clients.
+   */
+  static sanitizeErrorMessage(errMsg, apiKey) {
+    if (!errMsg || typeof errMsg !== 'string') return 'Provider error occurred';
+    let sanitized = errMsg;
+    if (apiKey && typeof apiKey === 'string' && apiKey.length > 5) {
+      sanitized = sanitized.split(apiKey).join('[REDACTED_API_KEY]');
+    }
+    // Redact query parameter patterns like ?key=... or &key=...
+    sanitized = sanitized.replace(/([?&]key=)[^&\s"']+/gi, '$1[REDACTED]');
+    // Redact typical Google API key patterns AIzaSy...
+    sanitized = sanitized.replace(/AIzaSy[A-Za-z0-9_-]{33}/g, '[REDACTED_API_KEY]');
+    return sanitized;
+  }
+
+  /**
+   * Classifies a Vision provider error into a standardized error object.
+   * Accurately distinguishes missing configuration, invalid keys, quota exhaustion,
+   * service timeouts, and network failures. Never leaks secrets or raw tokens.
+   */
+  static classifyVisionError(err) {
+    if (!err) {
+      return {
+        source: 'vision_error',
+        message: 'Vision AI encountered an unknown processing error.',
+      };
+    }
+
+    const msg = (err.message || '').toLowerCase();
+    const status = err.status || 0;
+
+    // Check for invalid or unauthorized API key
+    if (status === 400 || msg.includes('api_key_invalid') || msg.includes('api key not valid') || msg.includes('invalid api key')) {
+      return {
+        source: 'invalid_key',
+        message: 'The configured Gemini API key is invalid or unauthorized. Please verify GEMINI_API_KEY in Render.',
+      };
+    }
+
+    // Check for quota exhaustion / rate limiting
+    if (status === 429 || msg.includes('429') || msg.includes('resource_exhausted') || msg.includes('quota') || msg.includes('rate limit')) {
+      return {
+        source: 'quota_exceeded',
+        message: 'Gemini Vision API quota limit has been exceeded. Please try again shortly or check API quota in Google AI Studio.',
+      };
+    }
+
+    // Check for provider service unavailable
+    if (status === 503 || msg.includes('503') || msg.includes('unavailable') || msg.includes('overloaded')) {
+      return {
+        source: 'service_busy',
+        message: 'Google Gemini Vision service is temporarily overloaded. Please try again in a few moments.',
+      };
+    }
+
+    // Check for network errors / timeouts
+    if (err.name === 'AbortError' || msg.includes('timeout') || msg.includes('network') || msg.includes('econnreset') || msg.includes('etimedout') || msg.includes('fetch failed')) {
+      return {
+        source: 'network_error',
+        message: 'Network connection to Gemini Vision provider timed out or failed. Please check network connectivity and try again.',
+      };
+    }
+
+    // Default provider error with sanitized summary
+    const sanitized = this.sanitizeErrorMessage(err.message || 'Vision analysis failed');
+    return {
+      source: 'vision_error',
+      message: `Vision AI service could not analyze this image (${sanitized}). Please try another photo or use manual search.`,
+    };
+  }
+
+  /**
    * Health and reachability probe for Google Gemini Vision
    */
   static async checkVisionHealth(force = false) {
@@ -104,11 +177,11 @@ export class VisionAIService {
           } else {
             const errJson = await res.json().catch(() => ({}));
             lastErrMsg = errJson?.error?.message || `HTTP ${res.status}`;
-            console.warn(`[VisionAIService] Probe model ${model} returned HTTP ${res.status}: ${lastErrMsg}`);
+            console.warn(`[VisionAIService] Probe model ${model} returned HTTP ${res.status}: ${this.sanitizeErrorMessage(lastErrMsg, geminiKey)}`);
           }
         } catch (e) {
           lastErrMsg = e.message;
-          console.warn(`[VisionAIService] Probe model ${model} network notice: ${e.message}`);
+          console.warn(`[VisionAIService] Probe model ${model} network notice: ${this.sanitizeErrorMessage(e.message, geminiKey)}`);
         }
       }
 
@@ -126,31 +199,34 @@ export class VisionAIService {
         this._healthCache = { timestamp: Date.now(), data };
         return data;
       } else {
-        console.error(`[VisionAIService] Gemini Vision probe failed across tested models. Last error: ${lastErrMsg}`);
+        const sanitized = this.sanitizeErrorMessage(lastErrMsg, geminiKey);
+        console.error(`[VisionAIService] Gemini Vision probe failed across tested models. Last notice: ${sanitized}`);
         const data = {
           configured: true,
           reachable: false,
           provider: 'Google Gemini Flash Vision AI',
           envVarName: keyInfo.envVarName,
           status: 'error',
-          error: lastErrMsg,
-          message: `Educational Rules-Based Mode Active. AI-powered photo analysis is temporarily unavailable: ${lastErrMsg}`
+          error: sanitized,
+          message: `Educational Rules-Based Mode Active. AI-powered photo analysis is temporarily unavailable: ${sanitized}`
         };
-        this._healthCache = { timestamp: Date.now(), data };
+        // Short 5s backoff so transient cold-start probe issues don't latch for 60s
+        this._healthCache = { timestamp: Date.now() - 55000, data };
         return data;
       }
     } catch (err) {
-      console.error(`[VisionAIService] Gemini Vision probe unexpected exception: ${err.message}`);
+      const sanitized = this.sanitizeErrorMessage(err.message, geminiKey);
+      console.error(`[VisionAIService] Gemini Vision probe unexpected exception: ${sanitized}`);
       const data = {
         configured: true,
         reachable: false,
         provider: 'Google Gemini Flash Vision AI',
         envVarName: keyInfo.envVarName,
         status: 'error',
-        error: err.message,
-        message: `Educational Rules-Based Mode Active. AI-powered photo analysis could not reach the vision provider: ${err.message}`
+        error: sanitized,
+        message: `Educational Rules-Based Mode Active. AI-powered photo analysis could not reach the vision provider: ${sanitized}`
       };
-      this._healthCache = { timestamp: Date.now(), data };
+      this._healthCache = { timestamp: Date.now() - 55000, data };
       return data;
     }
   }
@@ -545,13 +621,19 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
         });
 
         if (response.status === 404 || response.status === 503 || response.status === 429) {
+          const errBody = await response.text().catch(() => '');
+          lastError = new Error(`Gemini ${model} HTTP ${response.status}: ${VisionAIService.sanitizeErrorMessage(errBody, key)}`);
+          lastError.status = response.status;
           console.warn(`[VisionAIService] Food identification model ${model} returned HTTP ${response.status}, falling back to next model...`);
           continue;
         }
 
         if (!response.ok) {
           const errBody = await response.text().catch(() => '');
-          throw new Error(`Gemini ${model} HTTP error ${response.status}: ${errBody}`);
+          const sanitized = VisionAIService.sanitizeErrorMessage(errBody, key);
+          const err = new Error(`Gemini ${model} HTTP error ${response.status}: ${sanitized}`);
+          err.status = response.status;
+          throw err;
         }
 
         const json = await response.json();
@@ -564,7 +646,7 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
         return parsed;
       } catch (err) {
         lastError = err;
-        console.warn(`[VisionAIService] Food recognition model ${model} attempt notice:`, err.message);
+        console.warn(`[VisionAIService] Food recognition model ${model} attempt notice:`, VisionAIService.sanitizeErrorMessage(err.message, key));
       } finally {
         clearTimeout(timeout);
       }
@@ -838,13 +920,19 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
         });
 
         if (response.status === 404 || response.status === 503 || response.status === 429) {
+          const errBody = await response.text().catch(() => '');
+          lastError = new Error(`Gemini ${model} HTTP ${response.status}: ${VisionAIService.sanitizeErrorMessage(errBody, key)}`);
+          lastError.status = response.status;
           console.warn(`[VisionAIService] Nutrition label model ${model} returned HTTP ${response.status}, falling back to next model...`);
           continue;
         }
 
         if (!response.ok) {
           const errBody = await response.text().catch(() => '');
-          throw new Error(`Gemini ${model} HTTP error ${response.status}: ${errBody}`);
+          const sanitized = VisionAIService.sanitizeErrorMessage(errBody, key);
+          const err = new Error(`Gemini ${model} HTTP error ${response.status}: ${sanitized}`);
+          err.status = response.status;
+          throw err;
         }
 
         const json = await response.json();
@@ -857,7 +945,7 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
         return parsed;
       } catch (err) {
         lastError = err;
-        console.warn(`[VisionAIService] Nutrition label model ${model} attempt notice:`, err.message);
+        console.warn(`[VisionAIService] Nutrition label model ${model} attempt notice:`, VisionAIService.sanitizeErrorMessage(err.message, key));
       } finally {
         clearTimeout(timeout);
       }

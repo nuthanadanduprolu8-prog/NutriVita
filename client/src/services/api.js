@@ -1,14 +1,28 @@
 import axios from 'axios';
 
-// Normalize base URL to ensure /api suffix if not provided
+// Normalize base URL to ensure /api suffix if not provided,
+// and protect against stale Render slugs (e.g. nutrivita-ndjf)
 export const getApiBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
-  if (!envUrl || !envUrl.trim()) return '/api';
-  const trimmed = envUrl.trim().replace(/\/+$/, '');
-  if (trimmed.endsWith('/api')) {
-    return trimmed;
+
+  // 1. If an environment variable is explicitly provided
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
+    let cleanUrl = envUrl.trim();
+    // Automatically redirect stale/deprecated Render backend instance to the live service
+    if (cleanUrl.includes('nutrivita-ndjf.onrender.com')) {
+      cleanUrl = cleanUrl.replace('nutrivita-ndjf.onrender.com', 'nutrivita-backend.onrender.com');
+    }
+    const trimmed = cleanUrl.replace(/\/+$/, '');
+    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
   }
-  return `${trimmed}/api`;
+
+  // 2. If running on Render in production browser environment (*.onrender.com)
+  if (typeof window !== 'undefined' && window.location?.hostname?.includes('onrender.com')) {
+    return 'https://nutrivita-backend.onrender.com/api';
+  }
+
+  // 3. Fallback to local development proxy /api
+  return '/api';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
