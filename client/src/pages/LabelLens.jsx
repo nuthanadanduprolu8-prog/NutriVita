@@ -959,9 +959,19 @@ const LabelLens = () => {
             {ocrError && (
               <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                <div>
+                <div className="flex-1">
                   <p className="font-semibold">{ocrError}</p>
                   <p className="mt-0.5 text-rose-600">{t('labelLens.ocrFailedTip')}</p>
+                  <div className="mt-2.5">
+                    <button
+                      type="button"
+                      onClick={handleOpenManual}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-white border border-emerald-300 rounded-lg shadow-sm hover:bg-emerald-50 transition-colors cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
+                      {t('labelLens.manualFormTitle') || 'Enter Nutrition Values Manually'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

@@ -97,7 +97,7 @@ export class VisionAIService {
     if (status === 429 || msg.includes('429') || msg.includes('resource_exhausted') || msg.includes('quota') || msg.includes('rate limit')) {
       return {
         source: 'quota_exceeded',
-        message: 'Gemini Vision API quota limit has been exceeded. Please try again shortly or check API quota in Google AI Studio.',
+        message: 'Gemini Vision API quota limit has been reached. Please enter nutrition values manually below or try again shortly.',
       };
     }
 
@@ -153,9 +153,11 @@ export class VisionAIService {
     try {
       // Actively supported Gemini models with generateContent capability
       const probeModels = [
+        'gemini-3.5-flash-lite',
+        'gemini-flash-lite-latest',
+        'gemini-3.1-flash-lite',
         'gemini-flash-latest',
         'gemini-3.5-flash',
-        'gemini-3.5-flash-lite',
         'gemini-3.8-flash'
       ];
       let reachableModel = null;
@@ -426,9 +428,11 @@ ${isTelugu ? 'All descriptions, rationales, and redFlags must be translated into
 `;
 
     const modelsToTry = [
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
       'gemini-flash-latest',
       'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
       'gemini-3.8-flash'
     ];
     let lastError = null;
@@ -577,9 +581,11 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
 
     // Try modern supported Gemini models in prioritized order
     const modelsToTry = [
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
       'gemini-flash-latest',
       'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
       'gemini-3.8-flash'
     ];
     let lastError = null;
@@ -705,9 +711,11 @@ Respond strictly with valid JSON conforming to this schema:
 `;
 
     const modelsToTry = [
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
       'gemini-flash-latest',
       'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
       'gemini-3.8-flash'
     ];
     let lastError = null;
@@ -936,9 +944,11 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
 `;
 
     const modelsToTry = [
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
       'gemini-flash-latest',
       'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
       'gemini-3.8-flash'
     ];
     let lastError = null;
