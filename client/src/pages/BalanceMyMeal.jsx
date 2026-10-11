@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import BackButton from '../components/common/BackButton';
 import { 
@@ -79,26 +79,26 @@ const BalanceMyMeal = () => {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    // Re-calculate analysis whenever plate items change
-    if (plateItems.length === 0) {
+  const evaluatePlate = useCallback(async (itemsToEvaluate) => {
+    const items = itemsToEvaluate || plateItems;
+    if (!items || items.length === 0) {
       setAnalysis(null);
       return;
     }
-    evaluatePlate();
-  }, [plateItems]);
-
-  const evaluatePlate = async () => {
     setLoadingAnalysis(true);
     try {
-      const res = await mealService.balanceMeal(plateItems);
+      const res = await mealService.balanceMeal(items);
       setAnalysis(res);
-    } catch (err) {
+    } catch {
       // Handled gracefully
     } finally {
       setLoadingAnalysis(false);
     }
-  };
+  }, [plateItems]);
+
+  useEffect(() => {
+    evaluatePlate();
+  }, [evaluatePlate]);
 
   const handleAddFood = (foodId) => {
     const existing = plateItems.find(p => p.foodId === foodId);
@@ -199,7 +199,7 @@ const BalanceMyMeal = () => {
                 <h2 className="text-base font-bold text-slate-900">Your Virtual Meal Plate</h2>
               </div>
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800">
-                {plateItems.length} Food Items Selected
+                {loadingAnalysis ? 'Balancing Plate...' : `${plateItems.length} Food Items Selected`}
               </span>
             </div>
 

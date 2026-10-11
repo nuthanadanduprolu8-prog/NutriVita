@@ -5,7 +5,6 @@ import {
   Sparkles, 
   ShieldCheck, 
   Info, 
-  HelpCircle,
   Activity,
   ArrowLeft
 } from 'lucide-react';
@@ -534,7 +533,7 @@ const FoodDetailModal = ({ food, isOpen, onClose }) => {
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Scanner Result</span>
+            <span>{food.isFromScanner ? (isTelugu ? 'తిరిగి స్కానర్ ఫలితాలకు' : 'Back to Scanner Result') : (isTelugu ? 'మూసివేయి' : 'Close Details')}</span>
           </button>
         </div>
 

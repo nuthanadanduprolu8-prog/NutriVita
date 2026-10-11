@@ -131,6 +131,14 @@ const Navbar = () => {
               {t('nav.symptomChecker')}
             </Link>
             <Link
+              to="/body-change-analyzer"
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                isCurrent('/body-change-analyzer') ? 'text-emerald-700 bg-emerald-50' : 'text-slate-600 hover:text-emerald-600 hover:bg-slate-50'
+              }`}
+            >
+              {language === 'te' ? 'శరీర మార్పులు' : 'Body Signs'}
+            </Link>
+            <Link
               to="/balance-my-meal"
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 isCurrent('/balance-my-meal') ? 'text-emerald-700 bg-emerald-50' : 'text-slate-600 hover:text-emerald-600 hover:bg-slate-50'

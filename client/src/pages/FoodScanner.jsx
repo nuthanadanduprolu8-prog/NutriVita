@@ -86,13 +86,32 @@ const FoodScanner = () => {
     setPreviewUrl(URL.createObjectURL(file));
   };
 
-  const handleCameraCapture = ({ file, dataUrl }) => {
+  const handleCameraCapture = (fileArg, dataUrlArg) => {
+    let file = fileArg;
+    let dataUrl = dataUrlArg;
+
+    // Robustly support object destructuring signature if passed as { file, dataUrl }
+    if (fileArg && typeof fileArg === 'object' && !(fileArg instanceof Blob) && fileArg.file) {
+      file = fileArg.file;
+      dataUrl = fileArg.dataUrl || dataUrlArg;
+    }
+
+    if (!file || !(file instanceof Blob) || file.size === 0) {
+      setUploadError('Invalid photo captured from camera. Please try capturing again or upload an image.');
+      return;
+    }
+
+    // Ensure it is a valid File object with proper name and image MIME type
+    const validFile = file instanceof File
+      ? file
+      : new File([file], 'food-capture.jpg', { type: file.type || 'image/jpeg', lastModified: Date.now() });
+
+    const preview = dataUrl || (typeof URL !== 'undefined' ? URL.createObjectURL(validFile) : '');
+
     resetScanState();
-    setSelectedFile(file);
-    setPreviewUrl(dataUrl);
+    setSelectedFile(validFile);
+    setPreviewUrl(preview);
     setIsCameraOpen(false);
-    // Execute scan immediately upon camera capture approval
-    executeScan(file);
   };
 
   const handleRemoveFile = () => {
@@ -214,7 +233,7 @@ const FoodScanner = () => {
     try {
       const res = await scannerService.searchFallback(q);
       setFallbackResults(res.data || []);
-    } catch (err) {
+    } catch {
       setFallbackResults([]);
     } finally {
       setFallbackLoading(false);

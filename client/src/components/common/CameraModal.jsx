@@ -314,7 +314,8 @@ const CameraModal = ({
 
     try {
       const arr = capturedImage.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
+      const mimeMatch = arr[0].match(/:(.*?);/);
+      const mime = (mimeMatch && mimeMatch[1]) ? mimeMatch[1] : 'image/jpeg';
       const bstr = atob(arr[1]);
       let n = bstr.length;
       const u8arr = new Uint8Array(n);
@@ -322,10 +323,16 @@ const CameraModal = ({
         u8arr[n] = bstr.charCodeAt(n);
       }
       const blob = new Blob([u8arr], { type: mime });
-      const file = new File([blob], fileName, { type: mime, lastModified: Date.now() });
+      const file = new File([blob], fileName || 'capture.jpg', { type: mime, lastModified: Date.now() });
+
+      // Attach destructuring compatibility properties
+      file.file = file;
+      file.dataUrl = capturedImage;
 
       stopTracks();
-      onCapture(file, capturedImage);
+      if (typeof onCapture === 'function') {
+        onCapture(file, capturedImage);
+      }
       onClose();
     } catch (err) {
       console.error('Failed to export captured photo:', err);

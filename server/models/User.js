@@ -22,6 +22,11 @@ const userSchema = new mongoose.Schema({
     minlength: 6,
     select: false,
   },
+  dateOfBirth: {
+    type: String,
+    trim: true,
+    default: null,
+  },
   age: {
     type: Number,
     min: 1,
@@ -121,6 +126,7 @@ export const UserRepository = {
       name: userData.name,
       email: userData.email.toLowerCase(),
       password: hashedPassword,
+      dateOfBirth: userData.dateOfBirth || null,
       age: userData.age || 25,
       gender: userData.gender || 'male',
       activityLevel: userData.activityLevel || 'moderate',

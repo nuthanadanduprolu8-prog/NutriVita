@@ -6,6 +6,7 @@ import Card from '../components/common/Card';
 import Input from '../components/common/Input';
 import Button from '../components/common/Button';
 import BackButton from '../components/common/BackButton';
+import { calculateAgeFromDob, getTodayDateString } from '../utils/dateUtils';
 
 const Profile = () => {
   const { user, updateProfile } = useAuth();
@@ -13,6 +14,7 @@ const Profile = () => {
 
   const [formData, setFormData] = useState({
     name: user?.name || '',
+    dateOfBirth: user?.dateOfBirth || '',
     age: user?.age || 24,
     gender: user?.gender || 'female',
     dietaryPreference: user?.dietaryPreference || 'vegetarian',
@@ -20,6 +22,7 @@ const Profile = () => {
     languagePreference: user?.languagePreference || language || 'en',
   });
 
+  const [dobError, setDobError] = useState('');
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -31,15 +34,57 @@ const Profile = () => {
     setErrorMessage('');
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  const handleDobChange = (e) => {
+    const dobVal = e.target.value;
     setSuccessMessage('');
     setErrorMessage('');
 
+    if (!dobVal) {
+      setFormData((prev) => ({ ...prev, dateOfBirth: '', age: '' }));
+      setDobError('');
+      return;
+    }
+
+    const { age: calculatedAge, error } = calculateAgeFromDob(dobVal);
+
+    if (error) {
+      setFormData((prev) => ({ ...prev, dateOfBirth: dobVal, age: '' }));
+      setDobError(error);
+    } else {
+      setFormData((prev) => ({ ...prev, dateOfBirth: dobVal, age: calculatedAge }));
+      setDobError('');
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSuccessMessage('');
+    setErrorMessage('');
+
+    let targetAge = Number(formData.age);
+
+    if (formData.dateOfBirth) {
+      const { age: derivedAge, error } = calculateAgeFromDob(formData.dateOfBirth);
+      if (error) {
+        setDobError(error);
+        return;
+      }
+      if (derivedAge !== null) {
+        targetAge = derivedAge;
+      }
+    }
+
+    if (!targetAge || targetAge < 1 || targetAge > 120) {
+      setErrorMessage('Please provide a valid age (1-120).');
+      return;
+    }
+
+    setLoading(true);
+
     const res = await updateProfile({
       name: formData.name,
-      age: Number(formData.age),
+      dateOfBirth: formData.dateOfBirth ? formData.dateOfBirth : null,
+      age: targetAge,
       gender: formData.gender,
       dietaryPreference: formData.dietaryPreference,
       activityLevel: formData.activityLevel,
@@ -91,6 +136,16 @@ const Profile = () => {
               <span className="text-slate-500">Activity:</span>
               <span className="font-semibold text-slate-800 capitalize">{user?.activityLevel}</span>
             </div>
+            {user?.dateOfBirth && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Born:</span>
+                <span className="font-semibold text-slate-800">{user.dateOfBirth}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-slate-500">Age:</span>
+              <span className="font-semibold text-slate-800">{user?.age} yrs</span>
+            </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Nutrition Profile:</span>
               <span className="font-semibold text-emerald-600">Active</span>
@@ -126,18 +181,54 @@ const Profile = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">{t('auth.age')}</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>{t('auth.dateOfBirth') || 'Date of Birth (DOB)'}</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Auto-derives age</span>
+                </label>
+                <input
+                  type="date"
+                  name="dateOfBirth"
+                  value={formData.dateOfBirth}
+                  max={getTodayDateString()}
+                  onChange={handleDobChange}
+                  className={`block w-full rounded-xl border px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 bg-white transition-all ${
+                    dobError ? 'border-rose-400 focus:border-rose-500' : 'border-slate-300 focus:border-emerald-500'
+                  }`}
+                />
+                {dobError && (
+                  <p className="text-xs text-rose-600 mt-1">{dobError}</p>
+                )}
+                {formData.dateOfBirth && !dobError && (
+                  <p className="text-[11px] text-emerald-600 font-medium mt-1">
+                    ✓ {t('auth.autoCalculatedFromDob') || 'Auto-calculated from Date of Birth'}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>{t('auth.calculatedAge') || t('auth.age') || 'Age'}</span>
+                  {formData.dateOfBirth && (
+                    <span className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Derived</span>
+                  )}
+                </label>
                 <input
                   type="number"
                   name="age"
                   value={formData.age}
                   onChange={handleChange}
-                  className="block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  readOnly={!!formData.dateOfBirth}
+                  placeholder="e.g. 25"
+                  className={`block w-full rounded-xl border px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 ${
+                    formData.dateOfBirth ? 'bg-slate-50 text-slate-700 font-semibold cursor-not-allowed border-slate-200' : 'bg-white border-slate-300'
+                  }`}
                   min="1"
                   max="120"
                 />
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">{t('auth.gender')}</label>
                 <select
@@ -151,9 +242,7 @@ const Profile = () => {
                   <option value="other">{t('auth.other')}</option>
                 </select>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">{t('auth.dietaryPreference')}</label>
                 <select
@@ -168,7 +257,9 @@ const Profile = () => {
                   <option value="eggetarian">{t('auth.eggetarian')}</option>
                 </select>
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">{t('auth.activityLevel')}</label>
                 <select
@@ -183,19 +274,19 @@ const Profile = () => {
                   <option value="active">{t('auth.active')}</option>
                 </select>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Preferred Interface Language</label>
-              <select
-                name="languagePreference"
-                value={formData.languagePreference}
-                onChange={handleChange}
-                className="block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
-              >
-                <option value="en">English (ఇంగ్లీష్)</option>
-                <option value="te">తెలుగు (Telugu)</option>
-              </select>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Preferred Interface Language</label>
+                <select
+                  name="languagePreference"
+                  value={formData.languagePreference}
+                  onChange={handleChange}
+                  className="block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                >
+                  <option value="en">English (ఇంగ్లీష్)</option>
+                  <option value="te">తెలుగు (Telugu)</option>
+                </select>
+              </div>
             </div>
 
             <div className="pt-3">

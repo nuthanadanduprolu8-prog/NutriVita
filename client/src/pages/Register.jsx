@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, Mail, Lock, UserPlus, Leaf, AlertCircle, Heart } from 'lucide-react';
+import { User, Mail, Lock, UserPlus, Leaf, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { calculateAgeFromDob, getTodayDateString } from '../utils/dateUtils';
 import Input from '../components/common/Input';
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
@@ -17,6 +18,7 @@ const Register = () => {
     email: '',
     password: '',
     confirmPassword: '',
+    dateOfBirth: '',
     age: '24',
     gender: 'female',
     dietaryPreference: 'vegetarian',
@@ -32,6 +34,27 @@ const Register = () => {
       setFormErrors((prev) => ({ ...prev, [name]: '' }));
     }
     clearError();
+  };
+
+  const handleDobChange = (e) => {
+    const dobVal = e.target.value;
+    clearError();
+
+    if (!dobVal) {
+      setFormData((prev) => ({ ...prev, dateOfBirth: '', age: '' }));
+      setFormErrors((prev) => ({ ...prev, dateOfBirth: '', age: '' }));
+      return;
+    }
+
+    const { age: calculatedAge, error: dobError } = calculateAgeFromDob(dobVal);
+
+    if (dobError) {
+      setFormData((prev) => ({ ...prev, dateOfBirth: dobVal, age: '' }));
+      setFormErrors((prev) => ({ ...prev, dateOfBirth: dobError, age: '' }));
+    } else {
+      setFormData((prev) => ({ ...prev, dateOfBirth: dobVal, age: String(calculatedAge) }));
+      setFormErrors((prev) => ({ ...prev, dateOfBirth: '', age: '' }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -55,8 +78,19 @@ const Register = () => {
       errors.confirmPassword = 'Passwords do not match';
     }
 
-    if (!formData.age || Number(formData.age) < 1 || Number(formData.age) > 120) {
-      errors.age = 'Please enter a valid age';
+    let targetAge = Number(formData.age);
+
+    if (formData.dateOfBirth) {
+      const { age: derivedAge, error: dobError } = calculateAgeFromDob(formData.dateOfBirth);
+      if (dobError) {
+        errors.dateOfBirth = dobError;
+      } else if (derivedAge !== null) {
+        targetAge = derivedAge;
+      }
+    }
+
+    if (!targetAge || targetAge < 1 || targetAge > 120) {
+      errors.age = 'Please enter a valid age (1-120)';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -69,7 +103,8 @@ const Register = () => {
       name: formData.name,
       email: formData.email,
       password: formData.password,
-      age: Number(formData.age),
+      dateOfBirth: formData.dateOfBirth ? formData.dateOfBirth : null,
+      age: targetAge,
       gender: formData.gender,
       dietaryPreference: formData.dietaryPreference,
       activityLevel: formData.activityLevel,
@@ -168,21 +203,54 @@ const Register = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    {t('auth.age')}
+                    {t('auth.dateOfBirth') || 'Date of Birth (DOB)'}
+                  </label>
+                  <input
+                    type="date"
+                    name="dateOfBirth"
+                    value={formData.dateOfBirth}
+                    max={getTodayDateString()}
+                    onChange={handleDobChange}
+                    className={`block w-full rounded-xl border px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 bg-white transition-all ${
+                      formErrors.dateOfBirth ? 'border-rose-400 focus:border-rose-500' : 'border-slate-300 focus:border-emerald-500'
+                    }`}
+                  />
+                  {formErrors.dateOfBirth && (
+                    <p className="text-xs text-rose-600 mt-1">{formErrors.dateOfBirth}</p>
+                  )}
+                  {formData.dateOfBirth && !formErrors.dateOfBirth && (
+                    <p className="text-[11px] text-emerald-600 font-medium mt-1">
+                      ✓ {t('auth.autoCalculatedFromDob') || 'Auto-calculated from Date of Birth'}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center justify-between">
+                    <span>{t('auth.calculatedAge') || t('auth.age') || 'Age'}</span>
+                    {formData.dateOfBirth && (
+                      <span className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Derived</span>
+                    )}
                   </label>
                   <input
                     type="number"
                     name="age"
                     value={formData.age}
                     onChange={handleChange}
-                    className="block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    readOnly={!!formData.dateOfBirth}
+                    placeholder="e.g. 25"
+                    className={`block w-full rounded-xl border px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 ${
+                      formData.dateOfBirth ? 'bg-slate-50 text-slate-700 font-semibold cursor-not-allowed border-slate-200' : 'bg-white border-slate-300'
+                    }`}
                     min="1"
                     max="120"
                     required
                   />
                   {formErrors.age && <p className="text-xs text-rose-600 mt-1">{formErrors.age}</p>}
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
                     {t('auth.gender')}
@@ -198,9 +266,7 @@ const Register = () => {
                     <option value="other">{t('auth.other')}</option>
                   </select>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
                     {t('auth.dietaryPreference')}
@@ -217,23 +283,23 @@ const Register = () => {
                     <option value="eggetarian">{t('auth.eggetarian')}</option>
                   </select>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    {t('auth.activityLevel')}
-                  </label>
-                  <select
-                    name="activityLevel"
-                    value={formData.activityLevel}
-                    onChange={handleChange}
-                    className="block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
-                  >
-                    <option value="sedentary">{t('auth.sedentary')}</option>
-                    <option value="light">{t('auth.light')}</option>
-                    <option value="moderate">{t('auth.moderate')}</option>
-                    <option value="active">{t('auth.active')}</option>
-                  </select>
-                </div>
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  {t('auth.activityLevel')}
+                </label>
+                <select
+                  name="activityLevel"
+                  value={formData.activityLevel}
+                  onChange={handleChange}
+                  className="block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                >
+                  <option value="sedentary">{t('auth.sedentary')}</option>
+                  <option value="light">{t('auth.light')}</option>
+                  <option value="moderate">{t('auth.moderate')}</option>
+                  <option value="active">{t('auth.active')}</option>
+                </select>
               </div>
             </div>
 
