@@ -4,7 +4,6 @@ import Footer from './Footer';
 import MobileNav from './MobileNav';
 import { DisclaimerBanner } from '../common/MedicalDisclaimer';
 import OfflineBanner from '../common/OfflineBanner';
-import PWAInstallPrompt from '../common/PWAInstallPrompt';
 
 const MainLayout = ({ children, hideFooter = false, showSidebar = false, sidebarComponent = null }) => {
   return (
@@ -37,9 +36,6 @@ const MainLayout = ({ children, hideFooter = false, showSidebar = false, sidebar
 
       {/* Mobile Bottom Navigation Bar */}
       <MobileNav />
-
-      {/* PWA Floating Install Prompt */}
-      <PWAInstallPrompt />
     </div>
   );
 };

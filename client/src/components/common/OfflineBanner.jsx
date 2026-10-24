@@ -67,8 +67,8 @@ export const OfflineBanner = () => {
         </span>
         <span className="text-amber-900">
           {isTelugu
-            ? 'ఇంటర్నెట్ కనెక్షన్ లేదు. విద్యా విషయాలు చూడవచ్చు; ఆహార స్కానర్, లేబుల్ లెన్స్ & AI సహాయకుడికి ఇంటర్నెట్ అవసరం.'
-            : 'No internet connection. You can view cached guides; Food Scanner, Label Lens, and VitaMate AI require an active connection.'}
+            ? 'ఇంటర్నెట్ కనెక్షన్ లేదు. దయచేసి నెట్‌వర్క్ కనెక్షన్‌ను తనిఖీ చేయండి; ఆహార స్కానర్, లేబుల్ లెన్స్ & AI సహాయకుడికి ఇంటర్నెట్ అవసరం.'
+            : 'No internet connection. Please check your network connection; Food Scanner, Label Lens, and VitaMate AI require an active connection.'}
         </span>
       </div>
       <button
