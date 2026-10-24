@@ -11,28 +11,94 @@ export class VisionAIService {
   static _healthCache = null;
 
   /**
+   * Official Google Generative AI production models prioritized for multimodal vision
+   * Followed by alias and legacy models for resilience.
+   */
+  static SUPPORTED_GEMINI_MODELS = [
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-pro',
+    'gemini-flash-latest',
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash'
+  ];
+
+  /**
    * Retrieves, normalizes, and sanitizes the Gemini API key from environment variables.
-   * Checks GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, GOOGLE_GEMINI_API_KEY.
-   * Strips surrounding quotes (" or ') and whitespace/newlines.
+   * Resilient to Linux case-sensitivity, accidental whitespace in variable names or values,
+   * surrounding quotes/escaped quotes, and key=value formatting.
+   * Checks GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, GOOGLE_GEMINI_API_KEY, and common aliases.
    */
   static getApiKeyInfo() {
-    const candidates = [
-      { name: 'GEMINI_API_KEY', val: process.env.GEMINI_API_KEY },
-      { name: 'GOOGLE_API_KEY', val: process.env.GOOGLE_API_KEY },
-      { name: 'GEMINI_KEY', val: process.env.GEMINI_KEY },
-      { name: 'GOOGLE_GEMINI_API_KEY', val: process.env.GOOGLE_GEMINI_API_KEY },
+    const cleanValue = (val) => {
+      if (!val || typeof val !== 'string') return null;
+      let cleaned = val.trim();
+      // Strip escaped quotes or surrounding quotes
+      cleaned = cleaned.replace(/^["'\\]+|["'\\]+$/g, '').trim();
+      // Strip accidental 'VARIABLE_NAME=' prefix if pasted as key=value in dashboard
+      cleaned = cleaned.replace(/^[A-Za-z0-9_]+=\s*/, '').trim();
+      // Strip wrapping quotes again if value was quoted inside key=value
+      cleaned = cleaned.replace(/^["']|["']$/g, '').trim();
+      return cleaned.length > 0 ? cleaned : null;
+    };
+
+    // 1. Direct candidate priority order
+    const priorityCandidates = [
+      'GEMINI_API_KEY',
+      'GOOGLE_API_KEY',
+      'GEMINI_KEY',
+      'GOOGLE_GEMINI_API_KEY',
+      'VITE_GEMINI_API_KEY',
+      'GENAI_API_KEY',
+      'GEMINI_APIKEY',
+      'GOOGLE_GENAI_API_KEY',
+      'GEMINI_TOKEN'
     ];
 
-    for (const c of candidates) {
-      if (c.val && typeof c.val === 'string') {
-        const cleaned = c.val.trim().replace(/^["']|["']$/g, '').trim();
-        if (cleaned.length > 0) {
-          return {
-            key: cleaned,
-            envVarName: c.name,
-            maskedPrefix: cleaned.length >= 4 ? `${cleaned.slice(0, 4)}...` : '***',
-            length: cleaned.length
-          };
+    for (const name of priorityCandidates) {
+      const val = process.env[name];
+      const cleaned = cleanValue(val);
+      if (cleaned) {
+        return {
+          key: cleaned,
+          envVarName: name,
+          maskedPrefix: cleaned.length >= 4 ? `${cleaned.slice(0, 4)}...` : '***',
+          length: cleaned.length
+        };
+      }
+    }
+
+    // 2. Case-insensitive and trimmed key name scan across process.env
+    // (Crucial for Linux environments like Render where env variable names are strictly case-sensitive)
+    if (typeof process !== 'undefined' && process.env) {
+      for (const rawName of Object.keys(process.env)) {
+        const normalizedName = rawName.trim().toUpperCase();
+        if (
+          normalizedName === 'GEMINI_API_KEY' ||
+          normalizedName === 'GOOGLE_API_KEY' ||
+          normalizedName === 'GEMINI_KEY' ||
+          normalizedName === 'GOOGLE_GEMINI_API_KEY' ||
+          normalizedName === 'VITE_GEMINI_API_KEY' ||
+          normalizedName === 'GENAI_API_KEY' ||
+          normalizedName === 'GEMINI_APIKEY' ||
+          normalizedName === 'GOOGLE_GENAI_API_KEY' ||
+          /^(VITE_)?GEMINI.*KEY$/.test(normalizedName) ||
+          /^(VITE_)?GOOGLE.*GEMINI.*KEY$/.test(normalizedName)
+        ) {
+          const cleaned = cleanValue(process.env[rawName]);
+          if (cleaned) {
+            return {
+              key: cleaned,
+              envVarName: rawName.trim(),
+              maskedPrefix: cleaned.length >= 4 ? `${cleaned.slice(0, 4)}...` : '***',
+              length: cleaned.length
+            };
+          }
         }
       }
     }
@@ -152,14 +218,7 @@ export class VisionAIService {
 
     try {
       // Actively supported Gemini models with generateContent capability
-      const probeModels = [
-        'gemini-3.5-flash-lite',
-        'gemini-flash-lite-latest',
-        'gemini-3.1-flash-lite',
-        'gemini-flash-latest',
-        'gemini-3.5-flash',
-        'gemini-3.8-flash'
-      ];
+      const probeModels = VisionAIService.SUPPORTED_GEMINI_MODELS;
       let reachableModel = null;
       let lastErrMsg = '';
 
@@ -427,14 +486,7 @@ You MUST respond strictly with valid JSON conforming to this exact structure:
 ${isTelugu ? 'All descriptions, rationales, and redFlags must be translated into Telugu script.' : ''}
 `;
 
-    const modelsToTry = [
-      'gemini-3.5-flash-lite',
-      'gemini-flash-lite-latest',
-      'gemini-3.1-flash-lite',
-      'gemini-flash-latest',
-      'gemini-3.5-flash',
-      'gemini-3.8-flash'
-    ];
+    const modelsToTry = VisionAIService.SUPPORTED_GEMINI_MODELS;
     let lastError = null;
 
     for (const model of modelsToTry) {
@@ -580,14 +632,7 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
 `;
 
     // Try modern supported Gemini models in prioritized order
-    const modelsToTry = [
-      'gemini-3.5-flash-lite',
-      'gemini-flash-lite-latest',
-      'gemini-3.1-flash-lite',
-      'gemini-flash-latest',
-      'gemini-3.5-flash',
-      'gemini-3.8-flash'
-    ];
+    const modelsToTry = VisionAIService.SUPPORTED_GEMINI_MODELS;
     let lastError = null;
 
     console.log(`[VisionAIService] Calling Gemini Vision for food recognition (image: ${imageBuffer.length} bytes, mimetype: ${mimeType})...`);
@@ -710,14 +755,7 @@ Respond strictly with valid JSON conforming to this schema:
 }
 `;
 
-    const modelsToTry = [
-      'gemini-3.5-flash-lite',
-      'gemini-flash-lite-latest',
-      'gemini-3.1-flash-lite',
-      'gemini-flash-latest',
-      'gemini-3.5-flash',
-      'gemini-3.8-flash'
-    ];
+    const modelsToTry = VisionAIService.SUPPORTED_GEMINI_MODELS;
     let lastError = null;
 
     for (const model of modelsToTry) {
@@ -943,14 +981,7 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
 }
 `;
 
-    const modelsToTry = [
-      'gemini-3.5-flash-lite',
-      'gemini-flash-lite-latest',
-      'gemini-3.1-flash-lite',
-      'gemini-flash-latest',
-      'gemini-3.5-flash',
-      'gemini-3.8-flash'
-    ];
+    const modelsToTry = VisionAIService.SUPPORTED_GEMINI_MODELS;
     let lastError = null;
 
     console.log(`[VisionAIService] Calling Gemini Vision for nutrition label analysis (image: ${imageBuffer.length} bytes, mimetype: ${mimeType})...`);

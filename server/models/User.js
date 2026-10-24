@@ -65,6 +65,8 @@ const userSchema = new mongoose.Schema({
 // Password hash hook
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
+  const isBcrypt = typeof this.password === 'string' && (this.password.startsWith('$2a$') || this.password.startsWith('$2b$') || this.password.startsWith('$2y$')) && this.password.length === 60;
+  if (isBcrypt) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
@@ -109,18 +111,20 @@ export const UserRepository = {
 
   async create(userData) {
     const status = getDBStatus();
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(userData.password, salt);
 
     if (status.connected) {
+      // UserModel pre-save hook handles hashing cleanly once
       const user = new UserModel({
         ...userData,
-        password: hashedPassword
+        password: userData.password
       });
       return await user.save();
     }
 
     // In-memory creation
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(userData.password, salt);
+
     const newUser = {
       _id: 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
       name: userData.name,

@@ -1,23 +1,31 @@
 import axios from 'axios';
 
 // Normalize base URL to ensure /api suffix if not provided,
-// and protect against stale Render slugs (e.g. nutrivita-ndjf)
+// and guarantee production builds target the live Render backend service
 export const getApiBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
 
-  // 1. If an environment variable is explicitly provided
+  // 1. If an environment variable is explicitly provided (e.g. VITE_API_URL in Render build)
   if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
     let cleanUrl = envUrl.trim();
-    // Automatically redirect stale/deprecated Render backend instance to the live service
-    if (cleanUrl.includes('nutrivita-ndjf.onrender.com')) {
-      cleanUrl = cleanUrl.replace('nutrivita-ndjf.onrender.com', 'nutrivita-backend.onrender.com');
+    // Automatically redirect stale/deprecated Render backend instances to the live service
+    if (cleanUrl.includes('nutrivita-ndjf.onrender.com') || cleanUrl.includes('nutrivita-server.onrender.com')) {
+      cleanUrl = cleanUrl
+        .replace('nutrivita-ndjf.onrender.com', 'nutrivita-backend.onrender.com')
+        .replace('nutrivita-server.onrender.com', 'nutrivita-backend.onrender.com');
     }
     const trimmed = cleanUrl.replace(/\/+$/, '');
     return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
   }
 
-  // 2. If running on Render in production browser environment (*.onrender.com)
-  if (typeof window !== 'undefined' && window.location?.hostname?.includes('onrender.com')) {
+  // 2. In production builds or when running in a remote browser environment (*.onrender.com)
+  if (
+    import.meta.env.PROD ||
+    (typeof window !== 'undefined' && window.location?.hostname && (
+      window.location.hostname.includes('onrender.com') ||
+      (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+    ))
+  ) {
     return 'https://nutrivita-backend.onrender.com/api';
   }
 

@@ -558,6 +558,7 @@ export const correctOrRecalculateFood = async (req, res, next) => {
         benefitsEn: 'Provides dietary energy.',
         nutritionSource: 'heuristic_estimate',
         isAiEstimated: true,
+        isVerifiedDatabase: false,
       };
 
       return res.status(200).json({

@@ -290,15 +290,6 @@ const SymptomChecker = () => {
             </div>
           )}
         </div>
-
-        {/* Prominent Educational Notice */}
-        <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/90 text-xs text-emerald-900 flex items-start gap-3 shadow-sm">
-          <Info className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-          <p className="leading-relaxed">
-            <strong>{isTelugu ? 'ముఖ్య గమనిక: ' : 'Educational Notice: '}</strong>
-            {t('symptomChecker.disclaimer')}
-          </p>
-        </div>
       </div>
 
       {/* Voice Recognition Proposed Confirmation Banner */}

@@ -44,6 +44,87 @@ import {
 import scannerService from '../services/scannerService';
 import foodService from '../services/foodService';
 
+const VITAMIN_LABELS = {
+  vitaminA: 'Vitamin A',
+  vitaminB1: 'Vitamin B1 (Thiamine)',
+  vitaminB2: 'Vitamin B2 (Riboflavin)',
+  vitaminB3: 'Vitamin B3 (Niacin)',
+  vitaminB6: 'Vitamin B6',
+  vitaminB9: 'Vitamin B9 (Folate)',
+  vitaminB12: 'Vitamin B12',
+  vitaminC: 'Vitamin C',
+  vitaminD: 'Vitamin D',
+  vitaminE: 'Vitamin E',
+  vitaminK: 'Vitamin K',
+};
+
+const MCG_VITAMINS = new Set(['vitaminA', 'vitaminB9', 'vitaminB12', 'vitaminD', 'vitaminK']);
+
+export const formatVitaminsList = (vitamins) => {
+  if (!vitamins) return ['Vitamin C', 'Dietary Fiber'];
+  if (Array.isArray(vitamins)) {
+    return vitamins.flatMap((item) => {
+      if (typeof item === 'string') return [item];
+      if (typeof item === 'object' && item !== null) {
+        return Object.entries(item)
+          .filter(([_, val]) => val !== null && val !== undefined && Number(val) > 0)
+          .map(([k, val]) => {
+            const name = VITAMIN_LABELS[k] || k.replace(/^vitamin([A-Z0-9]+)/i, 'Vitamin $1');
+            const unit = MCG_VITAMINS.has(k) ? 'mcg' : 'mg';
+            return `${name}: ${val} ${unit}`;
+          });
+      }
+      return [String(item)];
+    });
+  }
+  if (typeof vitamins === 'object') {
+    const list = Object.entries(vitamins)
+      .filter(([_, val]) => val !== null && val !== undefined && Number(val) > 0)
+      .map(([k, val]) => {
+        const name = VITAMIN_LABELS[k] || k.replace(/^vitamin([A-Z0-9]+)/i, 'Vitamin $1');
+        const unit = MCG_VITAMINS.has(k) ? 'mcg' : 'mg';
+        return `${name}: ${val} ${unit}`;
+      });
+    return list.length > 0 ? list : ['Multivitamins & Micronutrients'];
+  }
+  return [String(vitamins)];
+};
+
+const MINERAL_LABELS = {
+  iron: 'Iron',
+  calcium: 'Calcium',
+  zinc: 'Zinc',
+  magnesium: 'Magnesium',
+  potassium: 'Potassium',
+  sodium: 'Sodium',
+  phosphorus: 'Phosphorus',
+  selenium: 'Selenium',
+  copper: 'Copper',
+  manganese: 'Manganese',
+};
+
+export const formatMineralsList = (minerals) => {
+  if (!minerals) return ['Potassium'];
+  if (Array.isArray(minerals)) {
+    return minerals.flatMap((item) => {
+      if (typeof item === 'string') return [item];
+      if (typeof item === 'object' && item !== null) {
+        return Object.entries(item)
+          .filter(([_, val]) => val !== null && val !== undefined && Number(val) > 0)
+          .map(([k, val]) => `${MINERAL_LABELS[k] || k}: ${val} mg`);
+      }
+      return [String(item)];
+    });
+  }
+  if (typeof minerals === 'object') {
+    const list = Object.entries(minerals)
+      .filter(([_, val]) => val !== null && val !== undefined && Number(val) > 0)
+      .map(([k, val]) => `${MINERAL_LABELS[k] || (k.charAt(0).toUpperCase() + k.slice(1))}: ${val} mg`);
+    return list.length > 0 ? list : Object.keys(minerals).filter(k => minerals[k]);
+  }
+  return [String(minerals)];
+};
+
 // Curated sample package nutrition labels for instant demonstration & testing
 const SAMPLE_LABELS = [
   {
@@ -422,8 +503,8 @@ const LabelLens = () => {
       servingSize: food.servingSize || '100g standard serving',
       servingBasis: 'per_100g',
       visibleIngredients: [`Raw whole ${food.name}`],
-      keyVitamins: food.vitamins ? [food.vitamins] : ['Vitamin C', 'Dietary Fiber'],
-      keyMinerals: food.minerals ? Object.keys(food.minerals).filter(k => food.minerals[k]) : ['Potassium'],
+      keyVitamins: formatVitaminsList(food.vitamins),
+      keyMinerals: formatMineralsList(food.minerals),
       nutritionalBenefits: food.benefitsEn || 'Natural whole food rich in dietary micronutrients and clean nourishment.',
       nutritionalBenefitsTe: food.benefitsTe || null,
       matchedFood: food,
@@ -499,7 +580,7 @@ const LabelLens = () => {
       await new Promise((r) => setTimeout(r, 40));
       if (activeScanIdRef.current !== currentScanId) return;
 
-      setOcrStep(isTelugu ? 'జెమిని విజన్ AI తో చిత్రాన్ని విశ్లేషిస్తోంది...' : 'Analyzing food image with Multimodal Vision AI...');
+      setOcrStep(isTelugu ? 'జెమిని విజన్ AI తో ఆహారాన్ని విశ్లేషిస్తోంది...' : 'Identifying food with Multimodal Vision AI...');
       setOcrProgress(35);
 
       // Ensure real image file payload (use passed file or convert dataUrl)
@@ -526,145 +607,92 @@ const LabelLens = () => {
         setIsProcessing(false);
         setOcrError(
           isTelugu
-            ? 'మీరు ప్రస్తుతం ఆఫ్‌లైన్‌లో ఉన్నారు. ఆన్‌లైన్ లేబుల్ విశ్లేషణకు ఇంటర్నెట్ కనెక్షన్ అవసరం. కింద మాన్యువల్‌గా వివరాలు నమోదు చేయవచ్చు.'
-            : 'You are currently offline. Online Gemini label analysis requires an internet connection. You can enter nutrition values manually or select a sample label below.'
+            ? 'మీరు ప్రస్తుతం ఆఫ్‌లైన్‌లో ఉన్నారు. ఆహార విశ్లేషణకు ఇంటర్నెట్ కనెక్షన్ అవసరం. కింద ఉన్న రిఫరెన్స్ ఆహారాలలో ఎంచుకోవచ్చు.'
+            : 'You are currently offline. Food image analysis requires an active internet connection. You can select a food from Whole Food Quick-Select below.'
         );
         return;
       }
 
-      let labelRes = null;
-      let unconfigured = false;
-
+      let foodRes = null;
       try {
-        labelRes = await scannerService.analyzeLabel(formData);
+        foodRes = await scannerService.identifyFood(formData);
       } catch (reqErr) {
         if (reqErr.name === 'AbortError') return;
-        console.warn('analyzeLabel network or client error:', reqErr);
-        if (reqErr.response?.data?.source === 'unconfigured') {
-          unconfigured = true;
-        } else {
-          const msg = reqErr.response?.data?.message || reqErr.message || 'Vision service unavailable.';
-          setOcrError(msg);
-        }
+        console.warn('identifyFood network or client error:', reqErr);
+        const msg = reqErr.response?.data?.message || reqErr.message || 'Vision food service unavailable.';
+        setOcrError(msg);
       }
 
       if (activeScanIdRef.current !== currentScanId) return;
 
-      if (labelRes && labelRes.success) {
+      if (foodRes && foodRes.success) {
         setOcrProgress(90);
-        const cat = labelRes.category || (labelRes.isNutritionLabel ? 'PACKAGED_FOOD_WITH_LABEL' : 'WHOLE_FOOD');
 
-        // Store classification data for UI presentation
-        setCategoryData({
-          category: cat,
-          foodName: labelRes.foodName || labelRes.productName,
-          productName: labelRes.productName || labelRes.foodName,
-          brand: labelRes.brand,
-          alternativeNames: labelRes.alternativeNames || [],
-          teluguName: labelRes.teluguName,
-          visibleIngredients: labelRes.visibleIngredients || [],
-          servingSize: labelRes.servingSize,
-          servingBasis: labelRes.servingBasis,
-          keyVitamins: labelRes.keyVitamins || [],
-          keyMinerals: labelRes.keyMinerals || [],
-          nutritionalBenefits: labelRes.nutritionalBenefits,
-          nutritionalBenefitsTe: labelRes.nutritionalBenefitsTe,
-          preparationNotes: labelRes.preparationNotes,
-          unclearReason: labelRes.unclearReason,
-          notice: labelRes.notice,
-          noticeTe: labelRes.noticeTe,
-          ingredients: labelRes.ingredients,
-          allergens: labelRes.allergens,
-          matchedFood: labelRes.matchedFood,
-          source: labelRes.source,
-        });
-
-        if (labelRes.rawText) {
-          setRawOcrText(labelRes.rawText);
-        }
-
-        if (cat === 'NON_FOOD/UNCLEAR' || cat === 'PACKAGED_FOOD_WITHOUT_LABEL') {
-          // No invented numbers
+        if (foodRes.isFood === false) {
+          setCategoryData({
+            category: 'NON_FOOD/UNCLEAR',
+            foodName: null,
+            productName: null,
+            unclearReason: foodRes.visualObservations || 'No food items were detected in this image.',
+            notice: foodRes.clarificationQuestion || 'Please take or upload a clear photo of any food item or dish.',
+            source: 'vision_ai',
+          });
           setActiveStep('results');
-        } else if (labelRes.extracted) {
+        } else if (foodRes.matched) {
+          const food = foodRes.matched;
+          const isWhole = food.category === 'fruits' || food.category === 'vegetables' || food.category === 'grains_millets' || food.category === 'pulses_legumes';
+          const cat = isWhole ? 'WHOLE_FOOD' : 'COOKED_MEAL';
+
+          setIdentifiedFood(food);
+          setCategoryData({
+            category: cat,
+            foodName: food.name,
+            productName: food.name,
+            teluguName: food.teluguName || null,
+            servingSize: food.servingSize || (isWhole ? '100g standard serving' : '1 typical serving'),
+            servingBasis: food.servingBasis || (isWhole ? 'per_100g' : 'per_serving'),
+            visibleIngredients: food.detectedFoods?.length ? food.detectedFoods : (food.visibleIngredients || [`Fresh ${food.name}`]),
+            keyVitamins: formatVitaminsList(food.vitamins),
+            keyMinerals: formatMineralsList(food.minerals),
+            nutritionalBenefits: food.benefitsEn || food.nutritionalBenefits || 'Natural food rich in essential dietary nutrients.',
+            nutritionalBenefitsTe: food.benefitsTe || food.nutritionalBenefitsTe || null,
+            preparationNotes: food.preparationNotes || null,
+            matchedFood: food,
+            source: foodRes.source || 'vision_ai',
+          });
+
           const finalValues = {
-            ...labelRes.extracted,
-            productName: labelRes.foodName || labelRes.productName || labelRes.extracted.productName,
-            brand: labelRes.brand || labelRes.extracted.brand || null,
-            servingBasis: labelRes.servingBasis || labelRes.extracted.servingBasis || (cat === 'WHOLE_FOOD' ? 'per_100g' : 'per_serving'),
+            productName: food.name,
+            brand: null,
+            servingSize: food.servingSize || '100g',
+            servingBasis: food.servingBasis || (isWhole ? 'per_100g' : 'per_serving'),
+            calories: Number(food.calories || 0),
+            energyKj: Math.round(Number(food.calories || 0) * 4.184),
+            totalFat: Number(food.macronutrients?.fats || 0),
+            saturatedFat: Number(food.macronutrients?.saturatedFat || 0),
+            transFat: 0,
+            carbohydrates: Number(food.macronutrients?.carbs || 0),
+            totalSugars: Number(food.macronutrients?.sugars || (food.category === 'fruits' ? 10 : 0)),
+            addedSugars: 0,
+            fiber: Number(food.macronutrients?.fiber || 0),
+            protein: Number(food.macronutrients?.protein || 0),
+            sodium: Number(food.minerals?.sodium || 0),
+            calcium: food.minerals?.calcium || null,
+            iron: food.minerals?.iron || null,
+            potassium: food.minerals?.potassium || null,
+            vitaminC: food.vitamins?.vitaminC || null,
+            vitaminD: food.vitamins?.vitaminD || null,
           };
-          if (finalValues.sodium === null && finalValues.salt !== null) {
-            finalValues.sodium = Math.round(finalValues.salt * 400);
-          }
           setNutritionValues(finalValues);
-          setIndicators(labelRes.indicators || calculateNutritionIndicators(finalValues));
-          setGradeInfo(labelRes.gradeInfo || calculateEducationalGrade(finalValues));
-          setupReviewFromParsed(finalValues, labelRes.rawText || '', 'image', labelRes.confidence || 'high');
+          setIndicators(calculateNutritionIndicators(finalValues));
+          setGradeInfo(calculateEducationalGrade(finalValues));
+          setupReviewFromParsed(finalValues, foodRes.visualObservations || '', 'image', foodRes.confidenceLevel || 'high');
           setActiveStep('results');
         } else {
           setActiveStep('results');
         }
-      } else if (labelRes && labelRes.source === 'unconfigured') {
-        unconfigured = true;
-      } else if (labelRes && !labelRes.success) {
-        setOcrError(labelRes.message || labelRes.error || 'Vision AI could not analyze this image.');
-      }
-
-      // If unconfigured, run client-side Tesseract OCR as resilient fallback for printed labels
-      if (unconfigured) {
-        setOcrStep('Running local OCR for printed labels...');
-        setOcrProgress(65);
-
-        let worker = null;
-        try {
-          const { createWorker } = await import('tesseract.js');
-          if (activeScanIdRef.current !== currentScanId) return;
-
-          worker = await createWorker('eng');
-          if (activeScanIdRef.current !== currentScanId) {
-            await worker.terminate();
-            return;
-          }
-          setOcrProgress(80);
-
-          const ret = await worker.recognize(activeUrl);
-          await worker.terminate();
-          worker = null;
-
-          if (activeScanIdRef.current !== currentScanId) return;
-
-          const recognizedText = ret?.data?.text || '';
-          setRawOcrText(recognizedText);
-          const parseResult = parseNutritionText(recognizedText);
-
-          if (parseResult.isNutritionLabel && parseResult.detectedCount >= 2) {
-            setupReviewFromParsed(parseResult.extracted, recognizedText, 'image', parseResult.confidence);
-            const finalValues = {
-              ...parseResult.extracted,
-              servingBasis: parseResult.extracted.servingBasis || 'per_serving',
-            };
-            if (finalValues.sodium === null && finalValues.salt !== null) {
-              finalValues.sodium = Math.round(finalValues.salt * 400);
-            }
-            setNutritionValues(finalValues);
-            setIndicators(calculateNutritionIndicators(finalValues));
-            setGradeInfo(calculateEducationalGrade(finalValues));
-            setCategoryData({
-              category: 'PACKAGED_FOOD_WITH_LABEL',
-              productName: parseResult.extracted.productName || 'Packaged Label (OCR)',
-              servingSize: parseResult.extracted.servingSize,
-              servingBasis: parseResult.extracted.servingBasis,
-            });
-            setActiveStep('results');
-          } else {
-            setOcrError('Vision AI is currently unconfigured in Render, and local OCR could not detect a printed nutrition facts panel. You can enter values manually or select a sample label below.');
-          }
-        } catch {
-          if (worker) {
-            try { await worker.terminate(); } catch {}
-          }
-          setOcrError('Vision AI is currently unconfigured in Render. You can enter values manually or select a sample label below.');
-        }
+      } else if (foodRes && !foodRes.success) {
+        setOcrError(foodRes.message || foodRes.error || 'Vision AI could not identify this food image. Please try another photo or choose a whole food below.');
       }
 
       setOcrProgress(100);
@@ -909,36 +937,17 @@ const LabelLens = () => {
         </p>
       </div>
 
-      {/* Educational Notice Banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-900 text-sm">
-        <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div>
-          <span className="font-semibold">{t('disclaimer.badge')}: </span>
-          <span>{t('labelLens.disclaimer')}</span>
-        </div>
-      </div>
-
       {/* Engine Status & Mode Explainer Banner */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-white border border-gray-200 rounded-xl text-xs shadow-2xs">
         <div className="flex items-center gap-2.5 flex-wrap">
           <span className="flex items-center gap-1.5 font-bold text-gray-900">
             <Activity className="w-4 h-4 text-emerald-600" />
-            Active Assessment Engine:
-          </span>
-          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-            scannerStatus?.visionAiReachable
-              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-              : 'bg-amber-50 text-amber-900 border border-amber-200'
-          }`}>
-            {scannerStatus?.visionAiReachable
-              ? 'Google Gemini Vision AI Active & Local Engines'
-              : 'Client Tesseract.js OCR & 53-Food Database (Vision AI Unconfigured in server/.env)'}
           </span>
           <span className="text-gray-500 text-[11px]">
             {dataSource === 'reference'
               ? '• Currently in Workflow 2 (Reference Food Lookup)'
               : dataSource === 'image'
-              ? '• Currently in Workflow 1 (Nutrition Facts OCR)'
+              ? '• Currently analyzing food image'
               : '• Ready for scan or food selection'}
           </span>
         </div>
@@ -959,10 +968,10 @@ const LabelLens = () => {
           <Card className="p-6 border border-gray-200 shadow-sm bg-white">
             <h2 className="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
               <Camera className="w-5 h-5 text-emerald-600" />
-              {t('labelLens.uploadTitle')}
+              {t('labelLens.uploadTitle') || 'Scan Any Food'}
             </h2>
             <p className="text-xs text-gray-500 mb-4">
-              {t('labelLens.uploadSubtitle')}
+              {t('labelLens.uploadSubtitle') || 'Upload or take a photo of any food item or dish for identification and analysis (JPG, PNG, WEBP, up to 10MB)'}
             </p>
 
             {/* Error Message */}
@@ -1035,7 +1044,7 @@ const LabelLens = () => {
                 <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-900 flex items-center justify-center max-h-72">
                   <img
                     src={previewUrl}
-                    alt="Nutrition Label Preview"
+                    alt="Food Preview"
                     className="object-contain max-h-72 w-full"
                   />
                   <button
@@ -1048,22 +1057,13 @@ const LabelLens = () => {
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-2 justify-between">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-xs"
-                  >
-                    <Upload className="w-3.5 h-3.5 mr-1" />
-                    {t('labelLens.replaceImage')}
-                  </Button>
+                <div className="flex justify-end">
                   <Button
                     variant="primary"
                     size="sm"
                     onClick={runOCR}
                     disabled={isProcessing}
-                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                    className="w-full sm:w-auto text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
                     <Sparkles className="w-3.5 h-3.5 mr-1" />
                     {t('labelLens.scanButton')}
@@ -1120,32 +1120,6 @@ const LabelLens = () => {
                 </div>
               </div>
             )}
-
-            {/* Sample Presets */}
-            <div className="mt-6 pt-5 border-t border-gray-100">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-gray-700">
-                  {t('labelLens.trySamples') || 'Sample Demo Labels (For Testing & Demo):'}
-                </p>
-                <span className="text-[10px] text-gray-500 font-medium bg-gray-100 px-1.5 py-0.5 rounded">
-                  Examples
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {SAMPLE_LABELS.map((sample) => (
-                  <button
-                    key={sample.id}
-                    onClick={() => handleSelectSample(sample)}
-                    className="text-left p-2 rounded-lg border border-gray-200 hover:border-emerald-500 hover:bg-emerald-50/30 transition-all text-xs text-gray-800 font-medium flex items-center justify-between group"
-                  >
-                    <span className="truncate">
-                      {isTelugu ? sample.teluguName : sample.name}
-                    </span>
-                    <ArrowRight className="w-3 h-3 text-gray-400 group-hover:text-emerald-600 flex-shrink-0 ml-1" />
-                  </button>
-                ))}
-              </div>
-            </div>
 
             {/* Whole Food Quick-Select (Workflow 2) */}
             <div className="mt-6 pt-5 border-t border-gray-100 space-y-2.5">
@@ -1296,7 +1270,7 @@ const LabelLens = () => {
                     {dataSource === 'reference'
                       ? 'Standard reference values loaded per 100g. Pure natural foods carry no synthetic additives or added sugars.'
                       : dataSource === 'manual'
-                      ? 'Scan a label, upload a photo, or enter values below. Missing values remain unpenalized.'
+                      ? 'Upload a photo or enter values below. Missing values remain unpenalized.'
                       : 'Verify detected numbers before calculating scores. Missing values remain unpenalized.'}
                   </p>
                 </div>
@@ -1840,13 +1814,13 @@ const LabelLens = () => {
 
                   <div className="p-4 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2 text-xs text-rose-950">
                     <h3 className="font-bold text-sm text-rose-900">
-                      Unable to Detect Food or Nutrition Label
+                      Unable to Detect Food
                     </h3>
                     <p className="leading-relaxed">
-                      {categoryData.unclearReason || 'The uploaded photo does not contain recognizable food, ingredients, or a food packaging label.'}
+                      {categoryData.unclearReason || 'The uploaded photo does not contain recognizable food, ingredients, or a meal.'}
                     </p>
                     <p className="text-rose-800 font-medium">
-                      {isTelugu && categoryData.noticeTe ? categoryData.noticeTe : (categoryData.notice || t('labelLens.nonFoodGuidance') || 'Please upload a clear, well-lit photo of a whole food, cooked meal, or packaged food label.')}
+                      {isTelugu && categoryData.noticeTe ? categoryData.noticeTe : (categoryData.notice || t('labelLens.nonFoodGuidance') || 'Please upload or take a clear, well-lit photo of any food item or dish.')}
                     </p>
                   </div>
 
@@ -1856,10 +1830,9 @@ const LabelLens = () => {
                       Tips for a Successful Scan:
                     </h4>
                     <ul className="space-y-1 text-gray-600 list-disc pl-4">
-                      <li>Ensure adequate lighting on the food or nutrition facts label.</li>
+                      <li>Ensure adequate lighting on the food item or dish.</li>
                       <li>Hold the camera steady to avoid motion blur.</li>
                       <li>For whole foods and cooked meals, center the dish within the camera frame.</li>
-                      <li>For packaged foods, squarely frame the printed "Nutrition Facts" or "Nutritional Information" panel.</li>
                     </ul>
                   </div>
 
@@ -1887,77 +1860,6 @@ const LabelLens = () => {
                     >
                       <Edit3 className="w-3.5 h-3.5 mr-1.5" />
                       {t('labelLens.manualFormTitle')}
-                    </Button>
-                  </div>
-                </Card>
-              )}
-
-              {/* 2. PACKAGED_FOOD_WITHOUT_LABEL */}
-              {categoryData?.category === 'PACKAGED_FOOD_WITHOUT_LABEL' && (
-                <Card className="p-6 border border-slate-200 bg-white shadow-sm space-y-5">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-800 border border-slate-300 flex items-center gap-1.5">
-                      <Package className="w-3.5 h-3.5 text-slate-600" />
-                      {t('labelLens.categoryPackagedWithoutLabel') || 'Packaged Food (Label Not Visible)'}
-                    </span>
-                    <Button variant="outline" size="sm" onClick={handleReset} className="text-xs">
-                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
-                      {t('labelLens.reset')}
-                    </Button>
-                  </div>
-
-                  <div className="space-y-1">
-                    <h3 className="text-xl font-bold text-gray-900">
-                      {categoryData.productName || 'Packaged Food Product'}
-                    </h3>
-                    {categoryData.brand && (
-                      <p className="text-xs font-semibold text-slate-600">
-                        Brand / Manufacturer: {categoryData.brand}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs text-slate-900">
-                    <div className="flex items-start gap-2.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-bold text-sm text-slate-900">
-                          Printed Nutrition Facts Table Not Visible
-                        </p>
-                        <p className="mt-1 text-slate-700 leading-relaxed">
-                          {isTelugu && categoryData.noticeTe ? categoryData.noticeTe : (categoryData.notice || t('labelLens.packagedNoLabelNote'))}
-                        </p>
-                        <p className="mt-2 text-slate-600">
-                          NutriVita operates with scientific integrity: exact numerical nutrition values for packaged products are never guessed or invented without a readable nutrition facts panel.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2.5 pt-2">
-                    <Button
-                      variant="primary"
-                      onClick={handleOpenModalCamera}
-                      className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                    >
-                      <Camera className="w-3.5 h-3.5 mr-1.5" />
-                      Photograph Nutrition Facts Panel
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-xs"
-                    >
-                      <Upload className="w-3.5 h-3.5 mr-1.5" />
-                      Upload Back-of-Pack Image
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleOpenManual}
-                      className="text-xs"
-                    >
-                      <Edit3 className="w-3.5 h-3.5 mr-1.5" />
-                      Enter Label Values Manually
                     </Button>
                   </div>
                 </Card>
@@ -2031,7 +1933,9 @@ const LabelLens = () => {
                           <div className="flex flex-wrap gap-1">
                             {categoryData.keyVitamins.map((vit, i) => (
                               <span key={i} className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 font-semibold text-[11px]">
-                                {vit}
+                                {typeof vit === 'object' && vit !== null
+                                  ? Object.entries(vit).filter(([_, val]) => val).map(([k, val]) => `${k}: ${val}`).join(', ')
+                                  : String(vit)}
                               </span>
                             ))}
                           </div>
@@ -2045,7 +1949,9 @@ const LabelLens = () => {
                           <div className="flex flex-wrap gap-1">
                             {categoryData.keyMinerals.map((min, i) => (
                               <span key={i} className="px-2 py-0.5 rounded bg-teal-100 text-teal-900 font-semibold text-[11px]">
-                                {min}
+                                {typeof min === 'object' && min !== null
+                                  ? Object.entries(min).filter(([_, val]) => val).map(([k, val]) => `${k}: ${val}`).join(', ')
+                                  : String(min)}
                               </span>
                             ))}
                           </div>
@@ -2151,12 +2057,12 @@ const LabelLens = () => {
                         {categoryData.productName || 'Packaged Food'} {categoryData.brand ? `(${categoryData.brand})` : ''}
                       </span>
                       <p className="text-[11px] text-blue-800">
-                        Extracted printed nutrition facts panel. Missing values marked as unavailable.
+                        Identified food item and nutritional intelligence.
                       </p>
                     </div>
                   </div>
                   <Badge variant="outline" className="text-xs bg-white text-blue-800 border-blue-300 shrink-0">
-                    {categoryData.servingSize ? `Serving: ${categoryData.servingSize}` : 'Printed Label'}
+                    {categoryData.servingSize ? `Serving: ${categoryData.servingSize}` : 'Food Profile'}
                   </Badge>
                 </div>
               )}
@@ -2600,9 +2506,9 @@ const LabelLens = () => {
         onCapture={(file, dataUrl) => {
           processImage(file, dataUrl);
         }}
-        title={t('labelLens.cameraModalTitle') || 'Scan Food or Nutrition Label'}
+        title={t('labelLens.cameraModalTitle') || 'Scan Any Food'}
         guideType="rectangle"
-        instruction={t('labelLens.cameraInstructions') || 'Align nutrition facts panel or food item clearly inside camera frame.'}
+        instruction={t('labelLens.cameraInstructions') || 'Position food item or dish clearly inside camera frame.'}
         fileName="captured-food.jpg"
       />
 

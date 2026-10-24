@@ -283,15 +283,6 @@ const VitaQuiz = () => {
         </p>
       </div>
 
-      {/* Educational Notice Banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-900 text-xs sm:text-sm">
-        <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div>
-          <span className="font-semibold">{t('disclaimer.badge')}: </span>
-          <span>{t('vitaQuiz.disclaimer')}</span>
-        </div>
-      </div>
-
       {/* ======================================================== */}
       {/* 1. WELCOME / IDLE STATE                                  */}
       {/* ======================================================== */}

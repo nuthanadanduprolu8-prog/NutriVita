@@ -193,17 +193,6 @@ const NutritionAwareness = () => {
             {t('nutritionAwareness.subtitle')}
           </p>
 
-          {/* Non-diagnostic Disclaimer Banner */}
-          <div className="bg-emerald-950/70 border border-emerald-600/40 rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 max-w-4xl backdrop-blur-md shadow-sm">
-            <ShieldAlert className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
-            <div className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-              <strong className="font-semibold text-emerald-300 block mb-0.5">
-                {isTelugu ? 'విద్యా అవగాహన నిరాకరణ (Educational Disclaimer):' : 'Preventive Health Educational Disclaimer:'}
-              </strong>
-              {isTelugu ? DISCLAIMER_TE : DISCLAIMER_EN}
-            </div>
-          </div>
-
           {/* Quick-Jump Cards */}
           <div className="mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[

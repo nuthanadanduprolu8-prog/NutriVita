@@ -1,8 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Camera,
-  Upload,
   X,
   Sparkles,
   AlertTriangle,
@@ -29,7 +27,6 @@ import { useLanguage } from '../context/LanguageContext';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
-import CameraModal from '../components/common/CameraModal';
 import BackButton from '../components/common/BackButton';
 import { getVerifiedFoodImageUrl } from '../utils/foodImageFallback';
 import { DEFAULT_BODY_AREAS } from '../data/bodyAreasFallback';
@@ -64,15 +61,6 @@ const BodyChangeAnalyzer = () => {
   const [selectedChangeId, setSelectedChangeId] = useState(DEFAULT_BODY_AREAS[0]?.changes[0]?.id || 'spoon_nails');
   const [selectedDuration, setSelectedDuration] = useState('1_to_4_weeks');
   const [selectedSymptoms, setSelectedSymptoms] = useState([]);
-
-  // Image, camera & AI consent states
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [cameraError, setCameraError] = useState('');
-  const [aiConsent, setAiConsent] = useState(false);
-  const fileInputRef = useRef(null);
 
   // Analysis status & results
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -126,83 +114,10 @@ const BodyChangeAnalyzer = () => {
     );
   };
 
-  // Handle file select
-  const handleFileChange = (e) => {
-    setAnalysisError('');
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      setAnalysisError(t('labelLens.errorInvalidType') || 'Unsupported format. Please upload JPG, PNG, or WEBP.');
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setAnalysisError(t('labelLens.errorTooLarge') || 'Image size exceeds 10MB limit.');
-      return;
-    }
-
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-  };
-
-  // Drag & drop
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    setAnalysisError('');
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      setAnalysisError(t('labelLens.errorInvalidType') || 'Unsupported format. Please upload JPG, PNG, or WEBP.');
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setAnalysisError(t('labelLens.errorTooLarge') || 'Image size exceeds 10MB limit.');
-      return;
-    }
-
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-  };
-
-  // Camera modal handler
-  const handleOpenModalCamera = () => {
-    setAnalysisError('');
-    setCameraError('');
-    setCameraActive(true);
-  };
-
-  const handleRemoveImage = () => {
-    setSelectedFile(null);
-    setPreviewUrl('');
-    setCameraError('');
-    setAiConsent(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
   // Submit assessment request
   const handleAnalyze = async () => {
     if (!selectedAreaId || !selectedChangeId) {
       setAnalysisError('Please choose a body area and observable sign.');
-      return;
-    }
-
-    // Require explicit user consent if photo is attached
-    if (selectedFile && !aiConsent) {
-      setAnalysisError(
-        t('bodyChangeAnalyzer.aiConsentError') ||
-          'Please confirm the AI processing consent checkbox before proceeding with photo analysis.'
-      );
       return;
     }
 
@@ -216,10 +131,6 @@ const BodyChangeAnalyzer = () => {
       formData.append('duration', selectedDuration);
       formData.append('associatedSymptoms', JSON.stringify(selectedSymptoms));
       formData.append('language', language);
-
-      if (selectedFile) {
-        formData.append('photo', selectedFile);
-      }
 
       const json = await bodyAnalyzerService.assess(formData);
       if (!json?.success) {
@@ -239,13 +150,8 @@ const BodyChangeAnalyzer = () => {
 
   const handleReset = () => {
     setAssessmentResult(null);
-    setSelectedFile(null);
-    setPreviewUrl('');
-    setAiConsent(false);
     setSelectedSymptoms([]);
     setAnalysisError('');
-    setCameraError('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // Helper icon renderer
@@ -290,15 +196,6 @@ const BodyChangeAnalyzer = () => {
         </p>
       </div>
 
-      {/* Safety & Non-Diagnostic Disclaimer Banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-900 text-sm">
-        <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div>
-          <span className="font-semibold">{t('disclaimer.badge')}: </span>
-          <span>{t('bodyChangeAnalyzer.disclaimer')}</span>
-        </div>
-      </div>
-
       {/* Privacy Notice Card */}
       <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 flex items-center justify-between text-emerald-950 text-xs">
         <div className="flex items-center gap-2.5">
@@ -310,21 +207,11 @@ const BodyChangeAnalyzer = () => {
         </span>
       </div>
 
-      {/* Active Assessment Engine & Modes Explainer Banner */}
+      {/* Engine Status & Modes Explainer Banner */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-white border border-gray-200 rounded-xl text-xs shadow-2xs">
         <div className="flex items-center gap-2.5 flex-wrap">
           <span className="flex items-center gap-1.5 font-bold text-gray-900">
             <Activity className="w-4 h-4 text-emerald-600" />
-            Active Assessment Engine:
-          </span>
-          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-            analyzerStatus?.visionAiReachable
-              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-              : 'bg-amber-50 text-amber-900 border border-amber-200'
-          }`}>
-            {analyzerStatus?.visionAiReachable
-              ? 'Google Gemini Vision AI Active & Clinical Rules Engine'
-              : 'Educational Rules-Based Mode Active (Vision AI unconfigured in server/.env)'}
           </span>
           <span className="text-gray-500 text-[11px]">
             • Evidence-Based Clinical Nutrition Knowledge
@@ -494,181 +381,34 @@ const BodyChangeAnalyzer = () => {
             </div>
           </div>
 
-          {/* Step 5: Optional Photo Upload / Camera Capture */}
-          <div className="space-y-3">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-emerald-600 text-white text-xs font-bold">5</span>
-                {t('bodyChangeAnalyzer.step5Title')}
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {t('bodyChangeAnalyzer.step5Subtitle')}
-              </p>
-            </div>
-
-            <Card className="p-6 border border-gray-200 bg-white">
-              {analysisError && (
-                <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{analysisError}</span>
-                </div>
-              )}
-
-              {cameraError && (
-                <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{cameraError}</span>
-                </div>
-              )}
-
-              {!previewUrl ? (
-                <>
-                  <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-                    isDragging
-                      ? 'border-emerald-500 bg-emerald-50/50'
-                      : 'border-gray-300 hover:border-emerald-400 bg-gray-50/50'
-                  }`}
-                >
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept="image/jpeg,image/jpg,image/png,image/webp"
-                    className="hidden"
-                  />
-                  <div className="flex flex-col items-center justify-center space-y-2">
-                    <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-full">
-                      <Upload className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-gray-800">
-                        {isDragging ? 'Drop photo here' : t('bodyChangeAnalyzer.uploadButton')}
-                      </p>
-                      <p className="text-[11px] text-gray-500 mt-0.5">
-                        JPG, PNG, WEBP (Max 10MB)
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {!previewUrl && (
-                  <div className="mt-3">
-                    <Button
-                      variant="outline"
-                      type="button"
-                      onClick={handleOpenModalCamera}
-                      className="w-full text-xs font-medium border-gray-300 hover:bg-gray-50 flex items-center justify-center gap-2"
-                    >
-                      <Camera className="w-4 h-4 text-gray-600" />
-                      {t('bodyChangeAnalyzer.cameraButton')}
-                    </Button>
-                  </div>
-                )}
-              </>
-              ) : (
-                <div className="space-y-3">
-                  <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-900 max-h-64 flex items-center justify-center">
-                    <img
-                      src={previewUrl}
-                      alt="Physical Sign Preview"
-                      className="object-contain max-h-64 w-full"
-                    />
-                    <button
-                      onClick={handleRemoveImage}
-                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
-                      aria-label="Remove photo"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-xs"
-                    >
-                      <Upload className="w-3.5 h-3.5 mr-1" />
-                      Replace Photo
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleOpenModalCamera}
-                      className="text-xs"
-                    >
-                      <Camera className="w-3.5 h-3.5 mr-1" />
-                      Use Camera
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRemoveImage}
-                      className="text-xs"
-                    >
-                      <X className="w-3.5 h-3.5 mr-1" />
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Explicit AI Consent Checkbox (Required before Vision AI execution) */}
-              {selectedFile && (
-                <div className="mt-4 p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
-                  <label className="flex items-start gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={aiConsent}
-                      onChange={(e) => setAiConsent(e.target.checked)}
-                      className="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
-                    />
-                    <span className="text-xs text-gray-800 font-medium leading-relaxed">
-                      {t('bodyChangeAnalyzer.aiConsentLabel') ||
-                        'I understand this photo will be processed by AI for nutrition awareness purposes only. No personal health information is permanently stored.'}
-                    </span>
-                  </label>
-                  <p className="text-[11px] text-gray-500 flex items-center gap-1.5 pl-6">
-                    <Lock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>{t('bodyChangeAnalyzer.privacyNotice') || 'Privacy Assured: Photos are processed in-memory and never saved to disk or database.'}</span>
-                  </p>
-                </div>
-              )}
-
-              {/* End of Upload / Camera section */}
-            </Card>
-          </div>
-
           {/* Action Button */}
-          <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
-            <Button
-              variant="primary"
-              onClick={handleAnalyze}
-              disabled={isAnalyzing || (Boolean(selectedFile) && !aiConsent)}
-              className="w-full sm:w-auto text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8 py-3 rounded-xl shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isAnalyzing ? (
-                <>
-                  <Sparkles className="w-4 h-4 animate-spin" />
-                  <span>{t('bodyChangeAnalyzer.analyzing')}</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>{t('bodyChangeAnalyzer.analyzeButton')}</span>
-                </>
-              )}
-            </Button>
-            {!selectedFile && (
-              <span className="text-xs text-gray-500">
-                (Proceeding with observable sign assessment)
-              </span>
+          <div className="pt-2 space-y-3">
+            {analysisError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{analysisError}</span>
+              </div>
             )}
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <Button
+                variant="primary"
+                onClick={handleAnalyze}
+                disabled={isAnalyzing || !selectedAreaId || !selectedChangeId}
+                className="w-full sm:w-auto text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8 py-3 rounded-xl shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <Sparkles className="w-4 h-4 animate-spin" />
+                    <span>{t('bodyChangeAnalyzer.analyzing')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>{t('bodyChangeAnalyzer.analyzeButton')}</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -719,27 +459,7 @@ const BodyChangeAnalyzer = () => {
                   <p className="mt-1 text-purple-900 leading-relaxed font-medium">{assessmentResult.visualObservations}</p>
                 </div>
               </div>
-            ) : (
-              <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-start justify-between gap-2.5 text-xs text-amber-950">
-                <div className="flex items-start gap-2.5">
-                  <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold text-amber-900">Assessment Mode: </span>
-                    <p className="mt-0.5 leading-relaxed text-amber-900">
-                      {assessmentResult.apiKeyNotice ||
-                        'Educational Rules-Based Mode Active. Your guidance is based on the selected body area and reported symptoms. AI-powered photo analysis is currently unavailable because the vision service has not been configured.'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowModesModal(true)}
-                  className="shrink-0 text-amber-900 hover:text-amber-950 font-semibold underline text-xs cursor-pointer ml-2 mt-0.5"
-                >
-                  Modes Explained
-                </button>
-              </div>
-            )}
+            ) : null}
 
             {/* 2. Structured Section: Visible Observations vs User-Reported Input */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -990,20 +710,7 @@ const BodyChangeAnalyzer = () => {
         </div>
       )}
 
-      {/* Universal Camera Capture Modal */}
-      <CameraModal
-        isOpen={cameraActive}
-        onClose={() => setCameraActive(false)}
-        onCapture={(file, dataUrl) => {
-          setSelectedFile(file);
-          setPreviewUrl(dataUrl);
-          setAiConsent(false);
-        }}
-        title="Capture Physical Sign Photo"
-        guideType="oval"
-        instruction="Align the physical sign (nail, hair, eye, mouth, skin) clearly inside the camera frame with good lighting."
-        fileName="body-sign.jpg"
-      />
+
 
       {/* Educational Modal: Understanding NutriVita Assessment & Analysis Modes */}
       <Modal
