@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [
     react(),
   ],
+  build: {
+    emptyOutDir: true,
+  },
   server: {
     port: 3000,
     proxy: {
