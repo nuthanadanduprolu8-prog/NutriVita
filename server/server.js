@@ -144,7 +144,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌿 NutriVita Backend Server running on port ${PORT}`);
   console.log(`🔗 Health Check: http://localhost:${PORT}/api/health`);
   console.log(`🥦 Foods API: http://localhost:${PORT}/api/foods`);
