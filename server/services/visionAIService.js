@@ -17,15 +17,12 @@ export class VisionAIService {
    * Followed by alias and legacy models for resilience.
    */
   static SUPPORTED_GEMINI_MODELS = [
-    'gemini-2.5-flash',
-    'gemini-flash-latest',
-    'gemini-2.5-flash-lite',
     'gemini-flash-lite-latest',
-    'gemini-2.5-pro',
-    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
     'gemini-3-flash-preview',
-    'gemini-3.1-flash-lite',
-    'gemini-3.8-flash'
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-flash-latest'
   ];
 
   /**
@@ -562,7 +559,7 @@ ${isTelugu ? 'All descriptions, rationales, and redFlags must be translated into
       };
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 35000);
+      const timeout = setTimeout(() => controller.abort(), 12000);
 
       try {
         const response = await fetch(url, {
@@ -709,7 +706,7 @@ You MUST respond strictly with valid JSON conforming to this exact schema (no pr
       };
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 35000);
+      const timeout = setTimeout(() => controller.abort(), 12000);
 
       try {
         const response = await fetch(url, {
@@ -1058,7 +1055,7 @@ Respond strictly with valid JSON conforming to this schema (no markdown formatti
       };
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 35000);
+      const timeout = setTimeout(() => controller.abort(), 12000);
 
       try {
         const response = await fetch(url, {

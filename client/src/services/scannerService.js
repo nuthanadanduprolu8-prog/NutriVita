@@ -3,13 +3,13 @@ import api from './api';
 export const scannerService = {
   // Identify food from uploaded image or text hint using genuine Vision AI
   async identifyFood(formData) {
-    const res = await api.post('/scanner/identify', formData, { timeout: 60000 });
+    const res = await api.post('/scanner/identify', formData, { timeout: 120000 });
     return res.data;
   },
 
   // Extract printed nutrition label facts from uploaded food package image
   async analyzeLabel(formData) {
-    const res = await api.post('/scanner/analyze-label', formData, { timeout: 60000 });
+    const res = await api.post('/scanner/analyze-label', formData, { timeout: 120000 });
     return res.data;
   },
 
