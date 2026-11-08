@@ -26,7 +26,7 @@ export const getApiBaseUrl = () => {
     window.location?.hostname &&
     window.location.hostname.includes('onrender.com')
   ) {
-    return 'https://nutrivita-ndjf.onrender.com/api';
+    return 'https://nutrivita-backend.onrender.com/api';
   }
 
   // 4. Default fallback
