@@ -14,23 +14,14 @@ export const getApiBaseUrl = () => {
 
   const envUrl = import.meta.env.VITE_API_URL;
 
-  // 2. If an environment variable is explicitly provided (e.g. VITE_API_URL in Render build)
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
+  // 2. If a custom environment variable is explicitly provided (and not the obsolete nutrivita-ndjf URL)
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !envUrl.includes('nutrivita-ndjf')) {
     const trimmed = envUrl.trim().replace(/\/+$/, '');
     return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
   }
 
-  // 3. In remote deployed environments on Render (*.onrender.com)
-  if (
-    typeof window !== 'undefined' &&
-    window.location?.hostname &&
-    window.location.hostname.includes('onrender.com')
-  ) {
-    return 'https://nutrivita-backend.onrender.com/api';
-  }
-
-  // 4. Default fallback
-  return '/api';
+  // 3. Production deployed environment on Render: ALWAYS connect to the live nutrivita-backend service
+  return 'https://nutrivita-backend.onrender.com/api';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
