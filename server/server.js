@@ -90,10 +90,18 @@ app.get('/', (req, res) => {
 app.get('/api/health', (req, res) => {
   const dbStatus = getDBStatus();
   const keyInfo = VisionAIService.getApiKeyInfo();
+  
+  let secretsFiles = [];
+  try {
+    if (fs.existsSync('/etc/secrets')) {
+      secretsFiles = fs.readdirSync('/etc/secrets');
+    }
+  } catch {}
+
   res.status(200).json({
     status: 'healthy',
     application: 'NutriVita API',
-    version: '1.0.1',
+    version: '1.0.2',
     timestamp: new Date().toISOString(),
     database: dbStatus,
     visionAi: {
@@ -104,7 +112,9 @@ app.get('/api/health', (req, res) => {
         k.toUpperCase().includes('GEMINI') || 
         k.toUpperCase().includes('GOOGLE') || 
         k.toUpperCase().includes('VISION')
-      )
+      ),
+      renderSecretsDirExists: fs.existsSync('/etc/secrets'),
+      renderSecretsFiles: secretsFiles
     }
   });
 });
