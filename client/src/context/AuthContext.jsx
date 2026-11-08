@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import authService from '../services/authService';
+import api from '../services/api';
 
 const AuthContext = createContext();
 
@@ -9,6 +10,9 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Proactively warm up backend on application load so Render cold-start finishes while user navigates
+    api.get('/health').catch(() => {});
+
     // Check if user is already logged in from localStorage
     const savedUser = authService.getCurrentUser();
     const token = authService.getToken();
@@ -52,6 +56,18 @@ export const AuthProvider = ({ children }) => {
       setUser(data.user);
       return { success: true, user: data.user };
     } catch (err) {
+      // If the server was waking up from cold-start, auto-retry once seamlessly
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        try {
+          const retryData = await authService.login(credentials);
+          setUser(retryData.user);
+          return { success: true, user: retryData.user };
+        } catch (retryErr) {
+          const message = getErrorMessage(retryErr, 'Login failed. Please check your credentials.');
+          setError(message);
+          return { success: false, error: message };
+        }
+      }
       const message = getErrorMessage(err, 'Login failed. Please check your credentials.');
       setError(message);
       return { success: false, error: message };
@@ -65,6 +81,18 @@ export const AuthProvider = ({ children }) => {
       setUser(data.user);
       return { success: true, user: data.user };
     } catch (err) {
+      // If the server was waking up from cold-start, auto-retry once seamlessly
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        try {
+          const retryData = await authService.register(userData);
+          setUser(retryData.user);
+          return { success: true, user: retryData.user };
+        } catch (retryErr) {
+          const message = getErrorMessage(retryErr, 'Registration failed. Please try again.');
+          setError(message);
+          return { success: false, error: message };
+        }
+      }
       const message = getErrorMessage(err, 'Registration failed. Please try again.');
       setError(message);
       return { success: false, error: message };

@@ -44,7 +44,7 @@ export const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 45000, // 45-second default timeout prevents UI from spinning indefinitely
+  timeout: 60000, // 60-second default timeout gives Render cold starts full headroom
   headers: {
     'Content-Type': 'application/json',
   },

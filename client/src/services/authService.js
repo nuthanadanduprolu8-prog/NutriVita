@@ -2,7 +2,7 @@ import api from './api';
 
 export const authService = {
   async register(userData) {
-    const response = await api.post('/auth/register', userData);
+    const response = await api.post('/auth/register', userData, { timeout: 60000 });
     if (response.data.token) {
       localStorage.setItem('nutrivita_token', response.data.token);
       localStorage.setItem('nutrivita_user', JSON.stringify(response.data.user));
@@ -11,7 +11,7 @@ export const authService = {
   },
 
   async login(credentials) {
-    const response = await api.post('/auth/login', credentials);
+    const response = await api.post('/auth/login', credentials, { timeout: 60000 });
     if (response.data.token) {
       localStorage.setItem('nutrivita_token', response.data.token);
       localStorage.setItem('nutrivita_user', JSON.stringify(response.data.user));
