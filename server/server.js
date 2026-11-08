@@ -55,12 +55,23 @@ app.get('/', (req, res) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   const dbStatus = getDBStatus();
+  const keyInfo = VisionAIService.getApiKeyInfo();
   res.status(200).json({
     status: 'healthy',
     application: 'NutriVita API',
-    version: '1.0.0',
+    version: '1.0.1',
     timestamp: new Date().toISOString(),
     database: dbStatus,
+    visionAi: {
+      hasKey: Boolean(keyInfo.key),
+      keySource: keyInfo.envVarName || null,
+      keyLength: keyInfo.length || 0,
+      matchedEnvKeys: Object.keys(process.env).filter(k => 
+        k.toUpperCase().includes('GEMINI') || 
+        k.toUpperCase().includes('GOOGLE') || 
+        k.toUpperCase().includes('VISION')
+      )
+    }
   });
 });
 
