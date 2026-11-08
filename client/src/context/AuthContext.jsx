@@ -24,20 +24,25 @@ export const AuthProvider = ({ children }) => {
 
     if (savedUser && token) {
       setUser(savedUser);
-      // Verify token in background
+      // Immediately unblock the dashboard with zero delay!
+      setLoading(false);
+
+      // Verify token truly in background without ever blocking the UI or spinner
       authService.getMe()
         .then((res) => {
-          if (res.user) {
+          if (res?.user) {
             setUser(res.user);
             localStorage.setItem('nutrivita_user', JSON.stringify(res.user));
           }
         })
-        .catch(() => {
-          // Token expired or invalid
-          authService.logout();
-          setUser(null);
-        })
-        .finally(() => setLoading(false));
+        .catch((err) => {
+          // Only log out if server explicitly returned 401 Unauthorized
+          // Never log out for server cold-starts, timeouts, or temporary network drops
+          if (err.response?.status === 401) {
+            authService.logout();
+            setUser(null);
+          }
+        });
     } else {
       setLoading(false);
     }

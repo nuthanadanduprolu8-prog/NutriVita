@@ -2,7 +2,7 @@ import api from './api';
 
 export const authService = {
   async register(userData) {
-    const response = await api.post('/auth/register', userData, { timeout: 60000 });
+    const response = await api.post('/auth/register', userData, { timeout: 120000 });
     if (response.data.token) {
       localStorage.setItem('nutrivita_token', response.data.token);
       localStorage.setItem('nutrivita_user', JSON.stringify(response.data.user));
@@ -11,7 +11,7 @@ export const authService = {
   },
 
   async login(credentials) {
-    const response = await api.post('/auth/login', credentials, { timeout: 60000 });
+    const response = await api.post('/auth/login', credentials, { timeout: 120000 });
     if (response.data.token) {
       localStorage.setItem('nutrivita_token', response.data.token);
       localStorage.setItem('nutrivita_user', JSON.stringify(response.data.user));
@@ -33,17 +33,29 @@ export const authService = {
   },
 
   logout() {
-    localStorage.removeItem('nutrivita_token');
-    localStorage.removeItem('nutrivita_user');
+    try {
+      localStorage.removeItem('nutrivita_token');
+      localStorage.removeItem('nutrivita_user');
+    } catch {
+      // Ignore storage errors
+    }
   },
 
   getCurrentUser() {
-    const userStr = localStorage.getItem('nutrivita_user');
-    return userStr ? JSON.parse(userStr) : null;
+    try {
+      const userStr = localStorage.getItem('nutrivita_user');
+      return userStr ? JSON.parse(userStr) : null;
+    } catch {
+      return null;
+    }
   },
 
   getToken() {
-    return localStorage.getItem('nutrivita_token');
+    try {
+      return localStorage.getItem('nutrivita_token');
+    } catch {
+      return null;
+    }
   }
 };
 
