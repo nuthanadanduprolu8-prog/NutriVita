@@ -8,7 +8,7 @@ export const aiService = {
       history,
       language,
       userProfile,
-    });
+    }, { timeout: 60000 });
     return res.data;
   },
 

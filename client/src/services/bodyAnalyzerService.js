@@ -15,7 +15,7 @@ export const bodyAnalyzerService = {
 
   // Assess physical signs with optional photo upload
   async assess(formData) {
-    const res = await api.post('/body-analyzer/assess', formData);
+    const res = await api.post('/body-analyzer/assess', formData, { timeout: 60000 });
     return res.data;
   },
 };
