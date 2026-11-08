@@ -4,6 +4,8 @@
  * When no API key is provided, provides an honest, evidence-based rule assessment without faking visual AI.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { evaluateBodyChange, BODY_AREAS } from '../data/bodyChangeKnowledge.js';
 import { FoodRepository } from '../models/FoodItem.js';
 
@@ -100,6 +102,54 @@ export class VisionAIService {
         }
       }
     }
+
+    // 3. Fallback: Check Render Cloud Secret Files (/etc/secrets/) and local disk .env files
+    try {
+      const candidateFiles = [
+        '/etc/secrets/.env',
+        '/etc/secrets/server/.env',
+        '/etc/secrets/nutrivita.env',
+        '/etc/secrets/GEMINI_API_KEY',
+        '/etc/secrets/gemini_api_key',
+        path.resolve(process.cwd(), 'server/.env'),
+        path.resolve(process.cwd(), '.env')
+      ];
+
+      for (const filePath of candidateFiles) {
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, 'utf8');
+          for (const line of content.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eqIdx = trimmed.indexOf('=');
+            if (eqIdx !== -1) {
+              const k = trimmed.substring(0, eqIdx).trim().toUpperCase();
+              if (k.includes('GEMINI') || k.includes('GOOGLE_API_KEY')) {
+                const val = cleanValue(trimmed.substring(eqIdx + 1));
+                if (val) {
+                  return {
+                    key: val,
+                    envVarName: `file:${filePath}:${k}`,
+                    maskedPrefix: val.length >= 4 ? `${val.slice(0, 4)}...` : '***',
+                    length: val.length
+                  };
+                }
+              }
+            } else if (filePath.toUpperCase().includes('GEMINI')) {
+              const val = cleanValue(trimmed);
+              if (val) {
+                return {
+                  key: val,
+                  envVarName: `file:${filePath}`,
+                  maskedPrefix: val.length >= 4 ? `${val.slice(0, 4)}...` : '***',
+                  length: val.length
+                };
+              }
+            }
+          }
+        }
+      }
+    } catch {}
 
     return {
       key: null,

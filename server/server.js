@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { connectDB, getDBStatus } from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
@@ -18,10 +19,43 @@ import { VisionAIService } from './services/visionAIService.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables - supports server/.env, root .env, and relative __dirname
+// 1. Load standard local and root .env files
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config({ path: path.resolve(process.cwd(), 'server/.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config();
+
+// 2. Render Cloud Secret Files support (/etc/secrets/ directory)
+const renderSecretsDir = '/etc/secrets';
+if (fs.existsSync(renderSecretsDir)) {
+  try {
+    const envFile = path.join(renderSecretsDir, '.env');
+    if (fs.existsSync(envFile)) {
+      dotenv.config({ path: envFile });
+      console.log('[Startup] Loaded Render secret file: /etc/secrets/.env');
+    }
+
+    const secretFiles = fs.readdirSync(renderSecretsDir);
+    for (const file of secretFiles) {
+      const fullPath = path.join(renderSecretsDir, file);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isFile()) {
+          dotenv.config({ path: fullPath });
+          const upper = file.toUpperCase();
+          if (upper.includes('GEMINI') || upper.includes('GOOGLE')) {
+            const rawContent = fs.readFileSync(fullPath, 'utf8').trim();
+            if (rawContent && !rawContent.includes('\n') && !rawContent.includes('=')) {
+              process.env[file] = rawContent;
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('[Startup] Notice scanning /etc/secrets:', err.message);
+  }
+}
 
 // Connect to Database
 connectDB();
