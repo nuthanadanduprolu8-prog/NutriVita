@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "NutriVita - Vitamin Deficiency Detection and Nutrition Recommendation System",
   "scripts": {
+    "start": "cd server && npm start",
+    "build": "cd server && npm install",
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
     "install:server": "cd server && npm install",
