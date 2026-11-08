@@ -16,14 +16,7 @@ export const getApiBaseUrl = () => {
 
   // 2. If an environment variable is explicitly provided (e.g. VITE_API_URL in Render build)
   if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
-    let cleanUrl = envUrl.trim();
-    // Automatically redirect stale/deprecated Render backend instances to the live service
-    if (cleanUrl.includes('nutrivita-ndjf.onrender.com') || cleanUrl.includes('nutrivita-server.onrender.com')) {
-      cleanUrl = cleanUrl
-        .replace('nutrivita-ndjf.onrender.com', 'nutrivita-backend.onrender.com')
-        .replace('nutrivita-server.onrender.com', 'nutrivita-backend.onrender.com');
-    }
-    const trimmed = cleanUrl.replace(/\/+$/, '');
+    const trimmed = envUrl.trim().replace(/\/+$/, '');
     return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
   }
 
