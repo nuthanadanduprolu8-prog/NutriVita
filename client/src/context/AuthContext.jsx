@@ -34,6 +34,17 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const getErrorMessage = (err, defaultMsg) => {
+    if (err.response?.data?.message) return err.response.data.message;
+    if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+      return 'The backend server took too long to respond. If you are using Render, the free server may be cold-starting; please wait a moment and try again.';
+    }
+    if (err.message === 'Network Error' || !err.response) {
+      return 'Cannot reach the backend server. Please verify your network connection or verify that the server is online.';
+    }
+    return defaultMsg;
+  };
+
   const login = async (credentials) => {
     setError(null);
     try {
@@ -41,7 +52,7 @@ export const AuthProvider = ({ children }) => {
       setUser(data.user);
       return { success: true, user: data.user };
     } catch (err) {
-      const message = err.response?.data?.message || 'Login failed. Please check your credentials.';
+      const message = getErrorMessage(err, 'Login failed. Please check your credentials.');
       setError(message);
       return { success: false, error: message };
     }
@@ -54,7 +65,7 @@ export const AuthProvider = ({ children }) => {
       setUser(data.user);
       return { success: true, user: data.user };
     } catch (err) {
-      const message = err.response?.data?.message || 'Registration failed. Please try again.';
+      const message = getErrorMessage(err, 'Registration failed. Please try again.');
       setError(message);
       return { success: false, error: message };
     }

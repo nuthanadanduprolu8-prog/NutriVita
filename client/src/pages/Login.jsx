@@ -19,6 +19,7 @@ const Login = () => {
   });
   const [formErrors, setFormErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [slowNotice, setSlowNotice] = useState(false);
 
   const from = location.state?.from?.pathname || '/dashboard';
 
@@ -62,14 +63,25 @@ const Login = () => {
     }
 
     setLoading(true);
-    const result = await login({
-      email: formData.email,
-      password: formData.password,
-    });
-    setLoading(false);
+    setSlowNotice(false);
 
-    if (result.success) {
-      navigate(from, { replace: true });
+    const timer = setTimeout(() => {
+      setSlowNotice(true);
+    }, 3000);
+
+    try {
+      const result = await login({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (result.success) {
+        navigate(from, { replace: true });
+      }
+    } finally {
+      clearTimeout(timer);
+      setLoading(false);
+      setSlowNotice(false);
     }
   };
 
@@ -138,6 +150,15 @@ const Login = () => {
                 <span>{t('auth.submitSignIn')}</span>
               </Button>
             </div>
+
+            {slowNotice && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs flex items-center gap-2.5 animate-fadeIn">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                <span className="leading-relaxed">
+                  Connecting to cloud server... Free servers sleep when inactive and may take 30–60s to wake up on the first visit. Please stay on this page!
+                </span>
+              </div>
+            )}
 
             {/* Demo quick fill button */}
             <div className="pt-1">

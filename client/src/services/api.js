@@ -3,9 +3,18 @@ import axios from 'axios';
 // Normalize base URL to ensure /api suffix if not provided,
 // and guarantee production builds target the live Render backend service
 export const getApiBaseUrl = () => {
+  // 1. If running locally on localhost or 127.0.0.1, ALWAYS use local /api (dev server and local preview)
+  if (
+    typeof window !== 'undefined' &&
+    window.location?.hostname &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ) {
+    return '/api';
+  }
+
   const envUrl = import.meta.env.VITE_API_URL;
 
-  // 1. If an environment variable is explicitly provided (e.g. VITE_API_URL in Render build)
+  // 2. If an environment variable is explicitly provided (e.g. VITE_API_URL in Render build)
   if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
     let cleanUrl = envUrl.trim();
     // Automatically redirect stale/deprecated Render backend instances to the live service
@@ -18,18 +27,16 @@ export const getApiBaseUrl = () => {
     return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
   }
 
-  // 2. In production builds or when running in a remote browser environment (*.onrender.com)
+  // 3. In remote deployed environments on Render (*.onrender.com)
   if (
-    import.meta.env.PROD ||
-    (typeof window !== 'undefined' && window.location?.hostname && (
-      window.location.hostname.includes('onrender.com') ||
-      (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
-    ))
+    typeof window !== 'undefined' &&
+    window.location?.hostname &&
+    window.location.hostname.includes('onrender.com')
   ) {
     return 'https://nutrivita-backend.onrender.com/api';
   }
 
-  // 3. Fallback to local development proxy /api
+  // 4. Default fallback
   return '/api';
 };
 
@@ -37,6 +44,7 @@ export const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 25000, // 25-second timeout prevents UI from spinning indefinitely
   headers: {
     'Content-Type': 'application/json',
   },
@@ -102,4 +110,3 @@ export async function safeFetchJson(url, options = {}) {
 }
 
 export default api;
-

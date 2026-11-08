@@ -64,6 +64,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Manual database reconnect trigger
+app.all('/api/health/reconnect', async (req, res) => {
+  await connectDB();
+  res.status(200).json({
+    message: 'Triggered database connection attempt.',
+    database: getDBStatus(),
+  });
+});
+
 // Mount Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/foods', foodRoutes);

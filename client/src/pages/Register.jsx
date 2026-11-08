@@ -26,6 +26,7 @@ const Register = () => {
   });
   const [formErrors, setFormErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [slowNotice, setSlowNotice] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -99,20 +100,31 @@ const Register = () => {
     }
 
     setLoading(true);
-    const result = await register({
-      name: formData.name,
-      email: formData.email,
-      password: formData.password,
-      dateOfBirth: formData.dateOfBirth ? formData.dateOfBirth : null,
-      age: targetAge,
-      gender: formData.gender,
-      dietaryPreference: formData.dietaryPreference,
-      activityLevel: formData.activityLevel,
-    });
-    setLoading(false);
+    setSlowNotice(false);
 
-    if (result.success) {
-      navigate('/dashboard', { replace: true });
+    const timer = setTimeout(() => {
+      setSlowNotice(true);
+    }, 3000);
+
+    try {
+      const result = await register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        dateOfBirth: formData.dateOfBirth ? formData.dateOfBirth : null,
+        age: targetAge,
+        gender: formData.gender,
+        dietaryPreference: formData.dietaryPreference,
+        activityLevel: formData.activityLevel,
+      });
+
+      if (result.success) {
+        navigate('/dashboard', { replace: true });
+      }
+    } finally {
+      clearTimeout(timer);
+      setLoading(false);
+      setSlowNotice(false);
     }
   };
 
@@ -315,6 +327,15 @@ const Register = () => {
                 <span>{t('auth.submitRegister')}</span>
               </Button>
             </div>
+
+            {slowNotice && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs flex items-center gap-2.5 animate-fadeIn">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                <span className="leading-relaxed">
+                  Connecting to cloud server... Free servers sleep when inactive and may take 30–60s to wake up on the first visit. Please stay on this page!
+                </span>
+              </div>
+            )}
           </form>
 
           {/* Bottom Switcher */}
