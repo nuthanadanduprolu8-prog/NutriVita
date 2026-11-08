@@ -155,7 +155,7 @@ const Login = () => {
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs flex items-center gap-2.5 animate-fadeIn">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
                 <span className="leading-relaxed">
-                  Connecting to cloud server... Free servers sleep when inactive and may take 30–60s to wake up on the first visit. Please stay on this page!
+                  Connecting to cloud server... The Render free server is spinning up from standby (takes 30 to 60 seconds on the first visit). Your sign-in will proceed automatically. Please stay on this page!
                 </span>
               </div>
             )}

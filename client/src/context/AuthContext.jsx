@@ -13,6 +13,11 @@ export const AuthProvider = ({ children }) => {
     // Proactively warm up backend on application load so Render cold-start finishes while user navigates
     api.get('/health').catch(() => {});
 
+    // Periodic heartbeat every 10 minutes keeps free-tier backend awake while website is active
+    const heartbeat = setInterval(() => {
+      api.get('/health').catch(() => {});
+    }, 10 * 60 * 1000);
+
     // Check if user is already logged in from localStorage
     const savedUser = authService.getCurrentUser();
     const token = authService.getToken();
@@ -36,6 +41,8 @@ export const AuthProvider = ({ children }) => {
     } else {
       setLoading(false);
     }
+
+    return () => clearInterval(heartbeat);
   }, []);
 
   const getErrorMessage = (err, defaultMsg) => {
